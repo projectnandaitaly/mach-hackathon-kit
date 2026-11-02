@@ -90,7 +90,7 @@ After `city login`, the team gateway VK is at `~/.config/city/teams/<team>/llm.v
 
 ## Links
 
-- Source: [projectnandaitaly/agentic-city](https://github.com/projectnandaitaly/agentic-city)
+- Public kit: [projectnandaitaly/agentic-city-kit](https://github.com/projectnandaitaly/agentic-city-kit)
 - SDK: [city-sdk on PyPI](https://pypi.org/project/city-sdk/)
 - Spec: City Deploy CLI §10.2 in the repo docs
 
