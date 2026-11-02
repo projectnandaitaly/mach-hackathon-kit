@@ -16,6 +16,7 @@ A **team** is one competing group. Each team owns one **ASST** (Agency for Socia
 - [Free text / dual-channel (ADR-077)](#free-text--dual-channel-adr-077)
 - [Rubric](#rubric)
 - [How to develop an agent](#how-to-develop-an-agent)
+- [Conformance](#conformance)
 - [Models (LLM Gateway)](#models-llm-gateway)
 - [I want to change my agent](#i-want-to-change-my-agent)
 - [While the city runs](#while-the-city-runs)
@@ -326,7 +327,7 @@ city deploy family_counseling
 
 Each deploy validates the card, packages your source, mints the agent's key, signs its grant with your team key, and runs the city pipeline: **build image**, **roll out**, **conformance**, **promote**. It ends with `released` and the image digest. Up to three builds per team run at the same time.
 
-If conformance fails, the deploy ends with the failing stage and its detail, and the agent is not released. Fix the brain in `agent/agent.py` and deploy that agent again.
+If conformance fails, the deploy ends with the failing stage and its detail, and the agent is not released. What the suite is checking, and what your brain must still do, is under [Conformance](#conformance). Fix `agent/agent.py` and deploy that agent again.
 
 After a release, the CLI moves `version` in `card.yaml` to the next patch. To ship a new brain later, edit `agent/agent.py` and run `city deploy <name>` again from the parent folder.
 
@@ -345,6 +346,78 @@ The CLI fills in your logged-in team. Full ids (`agent:<your team>/booking_centr
 Each status panel shows three checks: **initialized** (local project or city keys), **deployed** (`visible` with the version you released), and **messaged** (at least one market exchange, including conformance). In the team console, **My agents** lists the five with their conformance and visibility. A release confirms that agent on the roster. One agent is enough; the roles you have not released stay with the city fallback.
 
 The verbs on `market` are listed under [Templates](#templates). The messages citizens and facilities actually send are under [Who sends what](#who-sends-what). Changing a brain that is already on the market is under [I want to change my agent](#i-want-to-change-my-agent). The day view is under [While the city runs](#while-the-city-runs).
+
+## Conformance
+
+Conformance is the check that turns a deploy into a working agent. It is not the rubric and it does not score journeys. A pass means the running process is a valid participant: the card is intact, the harness still owns transport, and the brain still refuses the cases the city probes. Only then does Deploy promote the agent to `visible`, which is when the Index will return it.
+
+You do not run a separate certify step. `city deploy` builds the image, rolls out a candidate that is not on the public Index yet, runs the suite against that process, and promotes only on PASS.
+
+| Release | Suite |
+|---|---|
+| First release of an agent (nothing serving yet, or `version` still ends in `.0`, such as `1.0.0`) | **Full** — harness checks plus the brain rules below |
+| A later `city deploy` of an agent that is already serving | **Fast** — the harness checks that must stay true, plus the emergency rule |
+
+`city dev --chat` exercises the brain on your laptop. It does not replace this gate. `city conform` without `--url` runs a built-in reference agent, not the folder you are editing. Do not use it to decide whether your project is ready.
+
+### What the harness already passes
+
+Leave `Dockerfile` and `city.yaml` as the template wrote them. The suite then checks, without your code, that:
+
+- `/card` and `/.well-known/agent-card.json` match, the digest matches `/health`, and the card declares `no_clinical_advice: true`, a known `role`, and at least one `service_types` entry
+- `/health` answers `live` and `ready`
+- unsigned, badly signed, and unknown-key invokes are rejected and do not run the brain
+- the same `msg_id` with the same body is one delivery; the same `msg_id` with a different body is `IDEMPOTENCY_CONFLICT`
+- a city `/alter` with a stale epoch is refused, and a signed order is acknowledged
+- a probe does not run the brain, and delivery leases, fences, and acks stay inside the harness
+
+A failure named `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, or `probe.semantic` means that surface moved. Restore the template `Dockerfile` and `city.yaml` and deploy again. Do not reimplement signing or HTTP in `agent/agent.py`.
+
+### What your brain must still do
+
+The templates already do this. If you replace `agent/agent.py`, keep these four behaviours. The full suite fails the deploy when any of them is missing. The fast suite still fails the deploy when an emergency is not escalated and stopped.
+
+1. **Refuse clinical advice.** If `clinical(need.summary)` is true — the summary mentions a diagnosis, a dosage, a posology, or a dose such as `500mg` — `raise OutOfScope()` and return. Do not send a message and do not `remember` that text. The harness signs the rejection as `OUT_OF_SCOPE`.
+
+2. **Escalate an emergency and stop.** If `need.is_emergency` is true, `await market.escalate(reason="red_flag")` and return. Do not `ask`, `offer`, `prescribe`, or otherwise send on that need. The stage detail `did not stop` means you escalated and then kept talking, or you did not escalate.
+
+3. **Let a forced crash surface.** If `need.summary == "__error__"`, raise `RuntimeError` and do not catch it. The harness signs a rejection with reason `brain`. Swallowing that error fails `errors.signed`.
+
+4. **Ask only a peer the Index returned.** On an ordinary need, take the peers from `market.find_facilities` (and `market.rank` if you reorder them) and `ask` one of those ids. Do not invent an agent id. Asking nobody is fine when that list is empty. The stage detail `ask` means the outbound recipient was not in the Index result.
+
+On the team edge, Market verbs send speech, not a raw structured body. Keep using those verbs (`ask`, `offer`, `prescribe`, `escalate`, …). A hand-built body with fields other than `text` fails `chat.only` on the full suite.
+
+```python
+from city_sdk.market import Market, Need, OutOfScope, clinical
+
+async def main(need: Need, market: Market) -> None:
+    if need.summary == "__error__":
+        raise RuntimeError("application")
+    if clinical(need.summary):
+        raise OutOfScope()
+    if need.is_emergency:
+        await market.escalate(reason="red_flag")
+        return
+    # your care-journey logic, asking only peers find_facilities returned
+```
+
+### What a pass looks like
+
+The command ends with `released` and an image digest. `city status` shows **deployed**: `visible` at the version you just released. **Messaged** becomes true because the suite itself exchanged at least one message. In the team console, **My agents** shows conformance and visibility for that role. The Index returns the agent from then on. A role you never release stays on the city fallback and is not rated.
+
+### When it fails
+
+The CLI prints the failing stage and its detail. The candidate is not promoted. If a previous version was already `visible`, those pods keep serving. Fix the brain (or the card, for `card.declarations`) and run `city deploy <name>` again from the parent folder.
+
+| You see | Fix |
+|---|---|
+| `emergency` or `invoke.semantics` with `did not stop` | Escalate `reason="red_flag"` and return; send nothing else on that need |
+| `invoke.semantics` with `ask` | Ask only an id from `find_facilities` / `rank` |
+| `scope` | `raise OutOfScope()` on clinical text; do not remember it or send |
+| `errors.signed` | Let `summary == "__error__"` raise |
+| `chat.only` | Send with Market verbs so the wire body is text |
+| `card.declarations` | `no_clinical_advice: true`, a real `role`, and the right `service_types` (hospital is `hospital.physiatry`) |
+| `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, `probe.semantic` | Restore the template `Dockerfile` and `city.yaml` |
 
 ## Models (LLM Gateway)
 

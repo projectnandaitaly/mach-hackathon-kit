@@ -6,6 +6,7 @@
 | **Agent** | Harness + brain published with `city deploy`; one card, one role |
 | **Brain** | Team-written async logic over `Need` and `Market` |
 | **CAP** | City Agent Protocol — signed envelopes, mandatory endpoints, delivery semantics |
+| **Conformance** | The suite `city deploy` runs before an agent becomes `visible`. A pass is a working participant; the rubric scores journeys later |
 | **Card** | `card.yaml` — identity, role, `service_types`, policy flags |
 | **Citizen** | City-played demand; chooses from structured offer fields |
 | **Harness** | City-provided runtime: transport, signing, lease, fence, ack |
