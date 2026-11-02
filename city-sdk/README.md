@@ -44,7 +44,7 @@ PyPI is not a substitute for the digest-pinned base image in production deploys.
 
 ## Links
 
-- Public kit (docs, templates, browsable source): [projectnandaitaly/agentic-city-kit](https://github.com/projectnandaitaly/agentic-city-kit)
+- Public kit (docs, templates, browsable source): [projectnandaitaly/mach-hackathon-kit](https://github.com/projectnandaitaly/mach-hackathon-kit)
 - Org on PyPI: [projectnandaitaly](https://pypi.org/org/projectnandaitaly/)
 
 ## License

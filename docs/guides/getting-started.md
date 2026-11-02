@@ -6,7 +6,7 @@ You are on a hackathon team. You build five agents, deploy them through the city
 
 - A laptop with **Python 3.12+** and a browser
 - Team console access at [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
-- This kit: [projectnandaitaly/agentic-city-kit](https://github.com/projectnandaitaly/agentic-city-kit)
+- This kit: [projectnandaitaly/mach-hackathon-kit](https://github.com/projectnandaitaly/mach-hackathon-kit)
 
 Install the CLI from PyPI (not from cloning this repo):
 
