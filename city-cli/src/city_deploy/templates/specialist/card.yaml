@@ -1,0 +1,16 @@
+agent_id: agent:t11/spec-uno
+team: team:t11
+name: Specialist
+version: 1.0.0
+cap_versions:
+  - "1.0"
+profiles:
+  - mhm/1.0
+role: facility
+service_types:
+  - specialist_care.cardiology
+districts:
+  - 1
+no_clinical_advice: true
+endpoints:
+  mailbox: agent:t11/spec-uno

@@ -1,0 +1,6 @@
+agent: gp-uno
+team: t03
+role: gp
+layers:
+  trust: preserve-order
+  memory: memory.v1

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://city.example/specs/profiles/mhm/1.0/card.json",
+  "title": "MHM agent card",
+  "allOf": [
+    {
+      "$ref": "../../../cap/1.0/card.json"
+    },
+    {
+      "type": "object",
+      "required": [
+        "role",
+        "service_types",
+        "no_clinical_advice"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "booking_centre",
+            "facility",
+            "gp",
+            "b2b"
+          ]
+        },
+        "service_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "districts": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "accessibility": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "no_clinical_advice": {
+          "const": true
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

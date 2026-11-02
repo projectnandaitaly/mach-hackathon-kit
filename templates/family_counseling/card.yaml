@@ -1,0 +1,16 @@
+agent_id: agent:t12/counseling-uno
+team: team:t12
+name: family_counseling
+version: 1.0.0
+cap_versions:
+  - "1.0"
+profiles:
+  - mhm/1.0
+role: facility
+service_types:
+  - family_counseling.gynecology
+districts:
+  - 2
+no_clinical_advice: true
+endpoints:
+  mailbox: agent:t12/counseling-uno

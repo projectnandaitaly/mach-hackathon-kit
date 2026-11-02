@@ -1,0 +1,14 @@
+agent_id: agent:t09/b2b-desk
+team: team:t09
+name: B2b
+version: 1.0.0
+cap_versions:
+  - "1.0"
+profiles:
+  - mhm/1.0
+role: b2b
+service_types:
+  - b2b
+no_clinical_advice: true
+endpoints:
+  mailbox: agent:t09/b2b-desk

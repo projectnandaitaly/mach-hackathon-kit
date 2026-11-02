@@ -1,0 +1,6 @@
+agent: booking_centre-rapido
+team: t07
+role: booking_centre
+layers:
+  trust: preserve-order
+  memory: memory.v1

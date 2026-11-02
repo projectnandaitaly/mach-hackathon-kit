@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://city.example/specs/cap/1.0/card.json",
+  "title": "Agent card",
+  "type": "object",
+  "patternProperties": {
+    "^x-[a-z0-9_-]+-": {}
+  },
+  "required": [
+    "agent_id",
+    "team",
+    "name",
+    "version",
+    "cap_versions",
+    "profiles",
+    "keys",
+    "endpoints"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "pattern": "^agent:[a-z0-9_-]+(/[a-z0-9_-]+)?$"
+    },
+    "team": {
+      "type": "string",
+      "pattern": "^team:[a-z0-9_-]+$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "cap_versions": {
+      "type": "array",
+      "items": {
+        "const": "1.0"
+      },
+      "minItems": 1
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]*/[0-9]+\\.[0-9]+$"
+      },
+      "minItems": 1
+    },
+    "data_processing": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "ai_act_transparency": {
+      "type": "string"
+    },
+    "governable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "max_inflight": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "consent": {
+      "type": "object"
+    },
+    "build": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "object"
+    },
+    "endpoints": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string"
+        },
+        "send_via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mailbox"
+      ],
+      "additionalProperties": false
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kid": {
+            "type": "string"
+          },
+          "kty": {
+            "const": "OKP"
+          },
+          "crv": {
+            "const": "Ed25519"
+          },
+          "x": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kid",
+          "kty",
+          "crv",
+          "x"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "grant": {
+      "type": "string"
+    },
+    "signatures": {
+      "type": "object"
+    }
+  }
+}
