@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from secrets import token_hex, token_urlsafe
@@ -633,7 +633,21 @@ class DeployService:
             current = latest.get(item.agent_id)
             if current is None or item.created_at >= current.created_at:
                 latest[item.agent_id] = item
-        rows = [latest[agent_id].view() for agent_id in sorted(latest)]
+        rows = []
+        for agent_id in sorted(latest):
+            history = sorted(
+                (
+                    item
+                    for item in self.deployments.values()
+                    if item.team_id == team_id and item.agent_id == agent_id
+                ),
+                key=lambda item: item.created_at,
+            )
+            body = history[-1].view()
+            merged = merged_stage_rows([item.stages for item in history])
+            if merged:
+                body["conformance"] = merged
+            rows.append(body)
         return {"team_id": team_id, "deployments": rows}
 
     async def rollback(
@@ -1665,6 +1679,26 @@ def _texts(value: object) -> list[str]:
             raise CapError("SCHEMA_INVALID", "list")
         found.append(item)
     return found
+
+
+def merged_stage_rows(history: Sequence[Sequence[Mapping[str, object]]]) -> list[dict[str, object]]:
+    """Newest outcome per stage name. A later fast run does not erase stages it skipped."""
+
+    by_name: dict[str, dict[str, object]] = {}
+    order: list[str] = []
+    for stages in history:
+        if not isinstance(stages, Sequence) or isinstance(stages, (str, bytes)):
+            continue
+        for stage in stages:
+            if not isinstance(stage, Mapping):
+                continue
+            name = stage.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            if name not in by_name:
+                order.append(name)
+            by_name[name] = dict(stage)
+    return [by_name[name] for name in order]
 
 
 def _stages(value: object) -> list[dict[str, object]]:

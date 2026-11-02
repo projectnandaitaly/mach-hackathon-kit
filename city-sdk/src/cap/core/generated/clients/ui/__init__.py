@@ -300,6 +300,9 @@ class TimelineItem(BaseModel):
     )
     kind: str
     time: AwareDatetime
+    text: str | None = Field(
+        None, description="Body text of the turn, when the envelope carries one."
+    )
 
 
 class TeamConversationDetail(BaseModel):
