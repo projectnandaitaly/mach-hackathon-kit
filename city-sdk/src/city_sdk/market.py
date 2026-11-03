@@ -768,7 +768,45 @@ class Market:
         if self._llm is None:
             raise CapError("KEY_UNKNOWN", "llm gateway key is missing")
         sent: list[object] = [dict(item) for item in messages]
-        return await self._llm.complete(sent, need_id=self._need_id(need_id))
+        bound = self._need_id(need_id)
+        try:
+            out = await self._llm.complete(sent, need_id=bound)
+        except Exception as exc:
+            _LOG.warning(
+                "llm call failed",
+                extra={
+                    "agent_id": self._agent_id,
+                    "need_id": bound,
+                    "city_fields": {
+                        "model": "city-default",
+                        "ok": False,
+                        "detail": str(exc)[:240],
+                    },
+                },
+            )
+            raise
+        model = out.get("model")
+        content = out.get("content")
+        if isinstance(content, str) and len(content) > 160:
+            preview: object = content[:160] + "…"
+        else:
+            preview = content
+        _LOG.info(
+            "llm call ok",
+            extra={
+                "agent_id": self._agent_id,
+                "need_id": bound,
+                "city_fields": {
+                    "model": model if isinstance(model, str) else "city-default",
+                    "ok": True,
+                    "detail": (
+                        f"tokens={out.get('prompt_tokens')}/{out.get('completion_tokens')} "
+                        f"content={preview!s}"
+                    )[:400],
+                },
+            },
+        )
+        return out
 
     async def world(
         self, from_date: date | None = None, until_date: date | None = None
