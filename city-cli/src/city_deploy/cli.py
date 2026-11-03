@@ -1385,10 +1385,15 @@ def _resolve_delete_ref(ctx: typer.Context, agent: str, *, root: Path) -> tuple[
     local = _local_card_named(root, name)
     family = name
     if local is not None and _session_team(local, root=root) == team:
+        family = _card_family(local, name)
+        try:
+            return _issued_id(ctx, root, team, family, name), team, name
+        except CapError as exc:
+            if exc.code != "TARGET_NOT_VISIBLE":
+                raise
         found = local.get("agent_id")
         if isinstance(found, str) and _AGENT_ID.fullmatch(found) and _minted(found):
             return found, team, name
-        family = _card_family(local, name)
     return _issued_id(ctx, root, team, family, name), team, name
 
 
@@ -1399,6 +1404,10 @@ def _resolve_agent_ref(ctx: typer.Context, agent: str, *, root: Path) -> tuple[s
     holds the id, or a role family (``gp``, ``hospital``, …) looked up among the
     team's ids. The id carries no team (ADR-085): the team is the local card's when
     it still has a login session, otherwise the active ``city login`` team.
+
+    ``city init`` mints a local ``agent:<rid>`` into the card. Prefer a city-issued
+    id for the family when Deploy already has one, so status/delete hit the live
+    agent; otherwise use the scaffold id until the first deploy writes it back.
     """
     if _AGENT_ID.fullmatch(agent) is not None:
         return agent, _team_for_id(agent, root=root)
@@ -1408,23 +1417,30 @@ def _resolve_agent_ref(ctx: typer.Context, agent: str, *, root: Path) -> tuple[s
     team = resolve_active_team(root=root)
     if local is not None:
         team = _session_team(local, root=root) or team
+        family = _card_family(local, name)
+        try:
+            return _issued_id(ctx, root, team, family, name), team
+        except CapError as exc:
+            if exc.code != "TARGET_NOT_VISIBLE":
+                raise
         found = local.get("agent_id")
         if isinstance(found, str) and _AGENT_ID.fullmatch(found) and _minted(found):
             return found, team
-        family = _card_family(local, name)
     return _issued_id(ctx, root, team, family, name), team
 
 
 def _undeployed(agent: str, *, root: Path) -> tuple[str, str] | None:
-    """A local scaffold that was never deployed: its placeholder id and its team."""
+    """A local scaffold with no city-issued id yet: its card id and its team."""
 
     if _AGENT_ID.fullmatch(agent) is not None:
         return None
     local = _local_card_named(root, _ref_name(agent))
     if local is None:
         return None
-    found = local.get("agent_id", unminted_id(local))
-    if not isinstance(found, str) or _minted(found):
+    found = local.get("agent_id")
+    if found is None:
+        found = unminted_id(local)
+    if not isinstance(found, str) or not _AGENT_ID.fullmatch(found):
         return None
     return found, _session_team(local, root=root) or resolve_active_team(root=root)
 

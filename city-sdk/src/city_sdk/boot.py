@@ -227,7 +227,8 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
     role = raw_role if isinstance(raw_role, str) else ""
     agent_id = card.get("agent_id")
     if agent_id is None and not cloud:
-        # Deploy mints the id at the first deploy (ADR-085); a local run uses a stand-in.
+        # ``city init`` normally writes a local rid; a card without one uses a stand-in
+        # until the first deploy, when Deploy issues the city id (ADR-085).
         card_role = card.get("role")
         agent_id = f"agent:unminted/{card_role if isinstance(card_role, str) else 'agent'}"
     if not isinstance(agent_id, str):
@@ -392,6 +393,12 @@ def _card(
             "x": jwk["x"],
         }
     ]
+    # Cap card requires endpoints.mailbox; city agents use the agent id (ADR-085).
+    endpoints = built.get("endpoints")
+    mailbox = dict(endpoints) if isinstance(endpoints, dict) else {}
+    if not mailbox.get("mailbox"):
+        mailbox["mailbox"] = agent_id
+    built["endpoints"] = mailbox
     digest = env.get("CITY_IMAGE_DIGEST", "sha256:local")
     built["build"] = {
         "image_digest": digest,
