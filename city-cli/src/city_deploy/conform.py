@@ -15,7 +15,7 @@ from city_conform.stages import CATALOG
 from city_conform.world import good_agent
 from city_sdk.ports import FixedClock
 
-FAST_STAGES = frozenset({1, 2, 3, 4, 5, 8, 10, 12, 16, 17, 20, 25, 26})
+FAST_STAGES = frozenset({1, 2, 3, 4, 5, 8, 12, 16, 17, 20, 25, 26})
 _REFERENCE_AT = datetime(2026, 11, 21, 10, 14, tzinfo=UTC)
 
 

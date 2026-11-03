@@ -57,7 +57,7 @@ city status
 
 Expect `released` / `visible`. Conformance is the gate inside `city deploy`: the city runs the suite against the candidate and promotes it only on PASS. The first release runs the full suite; a later release of an agent that is already serving runs the fast suite.
 
-Keep these four behaviours in `agent/agent.py` or the full suite fails the deploy. The templates already have them:
+The templates keep these four behaviours as optional guidance. They are **not** promote requirements ([ADR-088](../adr/ADR-088.md)):
 
 - `raise OutOfScope()` when `clinical(need.summary)` is true, and do not send or remember that text
 - on `need.is_emergency`, `await market.escalate(reason="red_flag")` and return without sending

@@ -461,6 +461,12 @@ async def later(_agent: Agent) -> Verdict:
     return skipped(_LATER)
 
 
+async def brain_policy(_agent: Agent) -> Verdict:
+    """Team brain policy. Not a deploy gate (ADR-088)."""
+
+    return skipped("team brain policy; not a deploy gate")
+
+
 def _stage(number: int, name: str, blocking: bool, fn: Any) -> Stage:
     return Stage(number, name, blocking, fn)
 
@@ -472,11 +478,11 @@ CATALOG: tuple[Stage, ...] = (
     _stage(4, "health", True, health),
     _stage(5, "invoke.signature", True, invoke_signature),
     _stage(6, "invoke.schema", True, invoke_schema),
-    _stage(7, "invoke.semantics", True, invoke_semantics),
+    _stage(7, "invoke.semantics", True, brain_policy),
     _stage(8, "invoke.idempotency", True, invoke_idempotency),
     _stage(9, "hold.lifecycle", True, hold_lifecycle),
-    _stage(10, "emergency", True, emergency),
-    _stage(11, "scope", True, scope),
+    _stage(10, "emergency", True, brain_policy),
+    _stage(11, "scope", True, brain_policy),
     _stage(12, "alter", True, alter),
     _stage(13, "disclosure", False, disclosure),
     _stage(14, "faults", False, faults),
@@ -486,7 +492,7 @@ CATALOG: tuple[Stage, ...] = (
     _stage(18, "custody.stale_fence", True, custody_stale_fence),
     _stage(19, "terminal.exactly_once", True, terminal_once),
     _stage(20, "probe.semantic", True, probe_semantic),
-    _stage(21, "errors.signed", True, errors_signed),
+    _stage(21, "errors.signed", True, brain_policy),
     _stage(22, "provenance", True, provenance),
     _stage(23, "shutdown", False, shutdown),
     _stage(24, "recovery", False, later),
@@ -495,6 +501,8 @@ CATALOG: tuple[Stage, ...] = (
     _stage(27, "chat.only", True, chat_only),
 )
 
-IMPLEMENTED = tuple(
-    stage.number for stage in CATALOG if stage.fn is not later and stage.fn is not hold_lifecycle
-)
+_NOT_GATED = frozenset({later, hold_lifecycle, brain_policy})
+
+IMPLEMENTED = tuple(stage.number for stage in CATALOG if stage.fn not in _NOT_GATED)
+
+BRAIN_POLICY = (7, 10, 11, 21)

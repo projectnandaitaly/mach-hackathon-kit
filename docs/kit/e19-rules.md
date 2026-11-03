@@ -349,14 +349,14 @@ The verbs on `market` are listed under [Templates](#templates). The messages cit
 
 ## Conformance
 
-Conformance is the check that turns a deploy into a working agent. It is not the rubric and it does not score journeys. A pass means the running process is a valid participant: the card is intact, the harness still owns transport, and the brain still refuses the cases the city probes. Only then does Deploy promote the agent to `visible`, which is when the Index will return it.
+Conformance is the check that turns a deploy into a working agent. It is not the rubric and it does not score journeys. A pass means the running process is a valid participant: the card is intact and the harness still owns transport. Only then does Deploy promote the agent to `visible`, which is when the Index will return it. Brain policy (clinical refusal, emergency escalate-and-stop, forced `__error__`, Index-only asks) is team choice: those stages stay in the report as `NOT TESTED` and do not block promote ([ADR-088](../adr/ADR-088.md)). The judge can still score emergency and mystery-shopper outcomes.
 
-You do not run a separate certify step. `city deploy` builds the image, rolls out a candidate that is not on the public Index yet, runs the suite against that process, and promotes only on PASS.
+You do not run a separate certify step. `city deploy` builds the image, rolls out a candidate that is not on the public Index yet, runs the suite against that process, and promotes only on PASS of the harness stages.
 
 | Release | Suite |
 |---|---|
-| First release of an agent (nothing serving yet, or `version` still ends in `.0`, such as `1.0.0`) | **Full** — harness checks plus the brain rules below |
-| A later `city deploy` of an agent that is already serving | **Fast** — the harness checks that must stay true, plus the emergency rule |
+| First release of an agent (nothing serving yet, or `version` still ends in `.0`, such as `1.0.0`) | **Full** — harness checks (brain-policy stages are not gates) |
+| A later `city deploy` of an agent that is already serving | **Fast** — the harness checks that must stay true |
 
 `city dev --chat` exercises the brain on your laptop. It does not replace this gate. `city conform` without `--url` runs a built-in reference agent, not the folder you are editing. Do not use it to decide whether your project is ready.
 
@@ -373,17 +373,17 @@ Leave `Dockerfile` and `city.yaml` as the template wrote them. The suite then ch
 
 A failure named `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, or `probe.semantic` means that surface moved. Restore the template `Dockerfile` and `city.yaml` and deploy again. Do not reimplement signing or HTTP in `agent/agent.py`.
 
-### What your brain must still do
+### What the templates still show (optional)
 
-The templates already do this. If you replace `agent/agent.py`, keep these four behaviours. The full suite fails the deploy when any of them is missing. The fast suite still fails the deploy when an emergency is not escalated and stopped.
+The templates keep these four behaviours as a starting point. They are **not** promote requirements. Stages `invoke.semantics`, `emergency`, `scope`, and `errors.signed` report `NOT TESTED` and do not fail deploy.
 
-1. **Refuse clinical advice.** If `clinical(need.summary)` is true — the summary mentions a diagnosis, a dosage, a posology, or a dose such as `500mg` — `raise OutOfScope()` and return. Do not send a message and do not `remember` that text. The harness signs the rejection as `OUT_OF_SCOPE`.
+1. **Refuse clinical advice.** If `clinical(need.summary)` is true — the summary mentions a diagnosis, a dosage, a posology, or a dose such as `500mg` — `raise OutOfScope()` and return. Do not send a message and do not `remember` that text. The harness signs the rejection as `OUT_OF_SCOPE`. The card must still declare `no_clinical_advice: true`.
 
-2. **Escalate an emergency and stop.** If `need.is_emergency` is true, `await market.escalate(reason="red_flag")` and return. Do not `ask`, `offer`, `prescribe`, or otherwise send on that need. The stage detail `did not stop` means you escalated and then kept talking, or you did not escalate.
+2. **Escalate an emergency and stop.** If `need.is_emergency` is true, `await market.escalate(reason="red_flag")` and return. Do not `ask`, `offer`, `prescribe`, or otherwise send on that need. The judge can still rate a missed escalation.
 
-3. **Let a forced crash surface.** If `need.summary == "__error__"`, raise `RuntimeError` and do not catch it. The harness signs a rejection with reason `brain`. Swallowing that error fails `errors.signed`.
+3. **Let a forced crash surface.** If `need.summary == "__error__"`, raise `RuntimeError` and do not catch it. The harness signs a rejection with reason `brain`.
 
-4. **Ask only a peer the Index returned.** On an ordinary need, take the peers from `market.find_facilities` (and `market.rank` if you reorder them) and `ask` one of those ids. Do not invent an agent id. Asking nobody is fine when that list is empty. The stage detail `ask` means the outbound recipient was not in the Index result.
+4. **Ask only a peer the Index returned.** On an ordinary need, take the peers from `market.find_facilities` (and `market.rank` if you reorder them) and `ask` one of those ids. Do not invent an agent id. Asking nobody is fine when that list is empty.
 
 On the team edge, Market verbs send speech, not a raw structured body. Keep using those verbs (`ask`, `offer`, `prescribe`, `escalate`, …). A hand-built body with fields other than `text` fails `chat.only` on the full suite.
 
@@ -411,13 +411,10 @@ The CLI prints the failing stage and its detail. The candidate is not promoted. 
 
 | You see | Fix |
 |---|---|
-| `emergency` or `invoke.semantics` with `did not stop` | Escalate `reason="red_flag"` and return; send nothing else on that need |
-| `invoke.semantics` with `ask` | Ask only an id from `find_facilities` / `rank` |
-| `scope` | `raise OutOfScope()` on clinical text; do not remember it or send |
-| `errors.signed` | Let `summary == "__error__"` raise |
 | `chat.only` | Send with Market verbs so the wire body is text |
 | `card.declarations` | `no_clinical_advice: true`, a real `role`, and the right `service_types` (hospital is `hospital.physiatry`) |
 | `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, `probe.semantic` | Restore the template `Dockerfile` and `city.yaml` |
+| `invoke.semantics`, `emergency`, `scope`, or `errors.signed` as `NOT TESTED` | Expected; not a deploy failure |
 
 ## Models (LLM Gateway)
 
