@@ -681,7 +681,6 @@ def deploy(
         created = create(signed_grant(["invoke"]))
     _fail_http(progress, created)
     deployment_id = str(created.json()["deployment_id"])
-    progress.begin("run pipeline")
     uploaded = client.post(
         f"/uploads/{deployment_id}",
         {
@@ -707,6 +706,8 @@ def deploy(
     # Deploy always promotes: done only when Index-visible and serving.
     released = status_name == "promoted" and outcome == "PASS"
     if released:
+        # Local wait=True can settle without every pipeline step being observed.
+        progress.catch_up(_STEP_LABELS["promote"])
         progress.ok()
     else:
         progress.fail()
@@ -753,7 +754,9 @@ _STEP_LABELS = {
     "conformance": "conformance",
     "promote": "promote",
 }
-_DEPLOY_STEP_TOTAL = 7
+# Six local prep steps, then the four Deploy pipeline phases (build → promote).
+_DEPLOY_LOCAL_STEPS = 6
+_DEPLOY_STEP_TOTAL = _DEPLOY_LOCAL_STEPS + len(_STEP_LABELS)
 _POLL_SECONDS = 0.5
 _FOLLOW_SECONDS = 20 * 60
 
@@ -801,7 +804,7 @@ def _follow(
     *,
     progress: _InlineProgress | None = None,
 ) -> dict[str, Any]:
-    """Poll the deployment and refresh the live progress line until it settles."""
+    """Poll the deployment and advance progress through pipeline phases."""
 
     shown: str | None = None
     deadline = time.monotonic() + _FOLLOW_SECONDS
@@ -813,7 +816,7 @@ def _follow(
             shown = step
             label = _STEP_LABELS.get(step, step)
             if progress is not None:
-                progress.relabel(label)
+                progress.begin(label)
         if time.monotonic() > deadline:
             raise CapError("UPSTREAM_TIMEOUT", f"deployment {deployment_id} is still running")
         time.sleep(_POLL_SECONDS)
@@ -1092,7 +1095,7 @@ def _emit(
 
 
 class _InlineProgress:
-    """One live bar + percent + step line. On a TTY each begin/relabel rewrites it."""
+    """One live bar + percent + step line. On a TTY each begin rewrites it."""
 
     def __init__(self, ctx: typer.Context, *, total: int) -> None:
         self._human = _state(ctx).get("json") is not True
@@ -1135,17 +1138,26 @@ class _InlineProgress:
         say(self._label(name), kind="run")
         self._line_mark = line_mark()
 
-    def relabel(self, name: str) -> None:
-        """Same index, new text (server pipeline phase on the last step)."""
+    def catch_up(self, name: str) -> None:
+        """Jump to the final step when the pipeline settled without every phase."""
 
-        if not self._human or not self._open:
-            self._name = name
+        if not self._open or self._index >= self._total:
             return
+        if not self._human:
+            self._index = self._total
+            self._name = name
+            self._started = time.perf_counter()
+            return
+        prev = self._label(self._name)
+        elapsed = format_duration(time.perf_counter() - self._started)
+        self._index = self._total
         self._name = name
+        self._started = time.perf_counter()
         label = self._label(name)
         if replace_status(label, kind="run", mark=self._line_mark):
             self._line_mark = line_mark()
             return
+        say(f"{prev}  [mute]{elapsed}[/mute]", kind="ok")
         say(label, kind="run")
         self._line_mark = line_mark()
 
