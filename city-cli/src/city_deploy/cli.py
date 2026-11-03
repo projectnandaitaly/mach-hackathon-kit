@@ -1092,11 +1092,11 @@ def _emit(
 
 
 class _InlineProgress:
-    """One live ``[n/m] step`` line. On a TTY each begin/relabel rewrites it."""
+    """One live bar + percent + step line. On a TTY each begin/relabel rewrites it."""
 
     def __init__(self, ctx: typer.Context, *, total: int) -> None:
         self._human = _state(ctx).get("json") is not True
-        self._total = total
+        self._total = max(total, 1)
         self._index = 0
         self._name = ""
         self._started = 0.0
@@ -1155,15 +1155,26 @@ class _InlineProgress:
     def fail(self) -> None:
         self._seal("bad")
 
-    def _label(self, name: str) -> str:
-        return f"[{self._index}/{self._total}] {name}"
+    def _percent(self, *, done: bool = False) -> int:
+        if done:
+            return 100
+        return min(100, int(100 * self._index / self._total))
+
+    def _bar(self, *, done: bool = False) -> str:
+        filled = self._total if done else max(0, min(self._total, self._index))
+        return "█" * filled + "░" * (self._total - filled)
+
+    def _label(self, name: str, *, done: bool = False) -> str:
+        bar = self._bar(done=done)
+        pct = self._percent(done=done)
+        return f"[{bar}] {pct}%  [{self._index}/{self._total}] {name}"
 
     def _seal(self, kind: StyleKind) -> None:
         if not self._human or not self._open:
             self._open = False
             return
         elapsed = format_duration(time.perf_counter() - self._started)
-        line = f"{self._label(self._name)}  [mute]{elapsed}[/mute]"
+        line = f"{self._label(self._name, done=kind == 'ok')}  [mute]{elapsed}[/mute]"
         if replace_status(line, kind=kind, mark=self._line_mark):
             self._open = False
             return
