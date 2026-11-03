@@ -60,7 +60,7 @@ def roster_after_release(
 
 
 def roster(team_id: str, assignment: Mapping[str, Any]) -> dict[str, Any]:
-    """One ``Roster``: the confirmed agents and the families left to the reference ASST."""
+    """One ``Roster``: the confirmed agents and the families with none (ADR-093)."""
 
     confirmed = assignment.get("confirmed") is True
     agents: list[dict[str, str]] = []
@@ -78,7 +78,7 @@ def roster(team_id: str, assignment: Mapping[str, Any]) -> dict[str, Any]:
         "asst": str(assignment["asst"]),
         "confirmed": confirmed,
         "agents": agents,
-        "fallback": [family for family in FAMILIES if family not in served],
+        "missing": [family for family in FAMILIES if family not in served],
     }
     confirmed_at = assignment.get("confirmed_at")
     if confirmed and isinstance(confirmed_at, str):

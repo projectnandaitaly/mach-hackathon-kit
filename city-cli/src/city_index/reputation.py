@@ -1,4 +1,4 @@
-"""Published ``score-evaluator@1`` reputations for query results (ADR-085).
+"""Published ``score-evaluator@2`` reputations for query results (ADR-085).
 
 The Index reads numbers and shows them. It never sorts, filters, or weights by them.
 """

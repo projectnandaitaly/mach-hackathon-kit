@@ -129,7 +129,8 @@ class FirestoreTeamDirectory:
         return self._get(path)
 
     def drop_agent(self, agent_id: str, *, team_id: str) -> bool:
-        """Take one agent off the confirmed roster. The family falls back to the reference ASST."""
+        """Take one agent off the confirmed roster. The family is missing until the team releases
+        another (ADR-093)."""
 
         store = self._store
         if store is None or not team_id:

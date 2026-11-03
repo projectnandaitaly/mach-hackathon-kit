@@ -106,7 +106,8 @@ The grant carries exactly that role's permissions. A booking centre grant cannot
 
 - **The platform does not choose for you.** The Index returns agents in a shuffled order and nothing ranks results. Your agents decide whom to ask.
 - **One ASST, five agents, one per role family** (`booking_centre`, `gp`, `hospital`, `specialist_care`, `family_counseling`). A release confirms that agent. City Hall does not approve it.
-- **An empty role is served by a city reference agent**, marked as a fallback on the scoreboard. Your team gets no rating for it, good or bad.
+- **The city runs no agent for you.** You can play before every role is released; a role you have not released is empty. Have all five on the market by the end of level 1.
+- **An empty front door costs 4 points per citizen.** When a citizen of your ASST writes to your GP, your booking centre, or (for the citizens who start there) your family counseling, and that role has no agent, the journey ends `unserved` and your team loses 4 points, once per citizen. Points the citizen already gave you (for example a GP visit before an empty booking centre) stay. An empty hospital or specialist costs nothing extra: the journey that needed it simply fails its own rows.
 - **No clinical advice.** Every card declares `no_clinical_advice: true`. The GP applies the protocol table; nobody diagnoses or prescribes doses. The judge does not score this automatically; City Hall may act on what it sees in the log.
 - **Disclose only what is needed.** Ask for personal data with a purpose (`market.request_data`, `market.ask_consent`). The citizen answers only to a purpose it accepts.
 - **No retry on a 4xx.** A refusal is final for that request. Retries on 5xx and timeouts are fine; idempotency is by `msg_id`.
@@ -211,6 +212,7 @@ Every rating is tied to a transaction between the rater and your agent and must 
 | citizen → booking centre | Rule ignored: expired prescription booked, cross-ASST hold without consent, non-U booking in the U reserve | −1 |
 | `city:audit` → booking centre | Cross-ASST data shared before the consent the active rule requires | −2 |
 | `city:clock` → the agent who answered | Reply to another agent within the race fast-reply seconds (default 10; City Hall sets it) | +1 |
+| `city:director` → your team | A citizen of your ASST reached an empty GP, booking centre, or family counseling (`journey.unserved`, once per citizen) | −4 |
 
 The answer set `S` is computed when the citizen's need is born, from the world and the citizen's hidden constraints. Slots that other citizens committed before your booking centre tried to hold are removed from it: losing a race is not your fault.
 
@@ -578,7 +580,7 @@ At higher levels the city may cancel bookings, expire holds, send duplicate conf
 
 ### What a team is expected to do
 
-- Keep the five role families on the market as `visible` agents, or accept a city fallback for an empty role (no rating for that role, good or bad).
+- Keep the five role families on the market as `visible` agents. An empty GP, booking centre, or family counseling costs 4 points for each citizen who reaches it.
 - Leave agents running for the whole day. `city retire` is not used during the event.
 - Answer citizen and peer messages inside the wait windows above so journeys do not end `no_reply`.
 - Apply the protocol table, the Ledger registers, and the active care rules; invent no clinical advice and retry no 4xx.
@@ -695,7 +697,7 @@ Only one person per team needs to deploy, but every member may log in.
 
 ### 3. The release confirms the agent
 
-When an agent is `visible`, it is on your roster for its role family. You do not ask City Hall to approve it. One agent is enough to play that role; a role you leave out is served by a city fallback agent and not rated. Deploy the others the same way. When City Hall presses Play, the director binds the confirmed agents to your ASST's facilities and doctors. While the city runs, a new or replaced agent on your roster is bound within about 10 seconds, from the next citizen on; a role you took over stays yours. Two roles cannot share one agent: such a roster is refused and the last one stays.
+When an agent is `visible`, it is on your roster for its role family. You do not ask City Hall to approve it. One agent is enough to play that role; a role you leave out stays empty, and each citizen who reaches an empty GP, booking centre, or family counseling costs your team 4 points. Deploy the others the same way. When City Hall presses Play, the director binds the confirmed agents to your ASST's facilities and doctors. While the city runs, a new or replaced agent on your roster is bound within about 10 seconds, from the next citizen on; a role you took over stays yours. Two roles cannot share one agent: such a roster is refused and the last one stays.
 
 You can redeploy a confirmed agent at any time: the roster names the agent, not a version. If you change the slug, deploy the new agent: that release replaces the previous one in the same role family.
 
