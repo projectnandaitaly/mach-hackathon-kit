@@ -600,47 +600,41 @@ def deploy(
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
     text = (project / "card.yaml").read_text(encoding="utf-8")
-    step = _DeployStep(ctx, "validate card")
-    step.begin()
+    progress = _InlineProgress(ctx, total=_DEPLOY_STEP_TOTAL)
+    progress.begin("validate card")
     try:
         preview = card_from_yaml(text)
         validate_mhm_card(preview)
     except CapError as exc:
-        step.fail()
+        progress.fail()
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
-    step.ok()
-    step = _DeployStep(ctx, "package source")
-    step.begin()
+    progress.begin("package source")
     try:
         dockerfile = _read_dockerfile(project)
         files = encode_files(collect_context(project, parse_dockerfile(dockerfile)))
     except CapError as exc:
-        step.fail()
+        progress.fail()
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
-    step.ok()
     version = str(preview["version"])
     team_field = str(preview["team"])
     team = team_field.removeprefix("team:")
     store = TeamStore.open(team, root=project)
     client = _client(ctx, project, team=team)
-    step = _DeployStep(ctx, "agent id")
-    step.begin()
+    progress.begin("agent id")
     assigned = client.post("/agent-ids", {"family": id_family(preview)})
-    _finish_http(step, assigned)
+    _fail_http(progress, assigned)
     agent_id = str(assigned.json()["agent_id"])
+    card_note: str | None = None
     if write_card_id(project / "card.yaml", agent_id):
         text = (project / "card.yaml").read_text(encoding="utf-8")
-        if _state(ctx).get("json") is not True:
-            say(f"Card updated  [mute]agent_id → {agent_id}[/mute]", kind="info")
-    step = _DeployStep(ctx, "mint agent key")
-    step.begin()
+        card_note = f"Card updated  [mute]agent_id → {agent_id}[/mute]"
+    progress.begin("mint agent key")
     minted = client.post(f"/agents/{agent_id}/keys", {})
-    _finish_http(step, minted)
+    _fail_http(progress, minted)
     public = minted.json()
-    step = _DeployStep(ctx, "sign grant")
-    step.begin()
+    progress.begin("sign grant")
     slug = id_name(agent_id)
 
     def signed_grant(permissions: list[str]) -> SignedGrant:
@@ -665,12 +659,10 @@ def deploy(
         permissions = grant_permissions(card)
         signed = signed_grant(permissions)
     except CapError as exc:
-        step.fail()
+        progress.fail()
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
-    step.ok()
-    step = _DeployStep(ctx, "create deployment")
-    step.begin()
+    progress.begin("create deployment")
 
     def create(grant: SignedGrant) -> httpx.Response:
         return client.post(
@@ -687,10 +679,9 @@ def deploy(
     created = create(signed)
     if permissions != ["invoke"] and _unassigned(created):
         created = create(signed_grant(["invoke"]))
-    _finish_http(step, created)
+    _fail_http(progress, created)
     deployment_id = str(created.json()["deployment_id"])
-    step = _DeployStep(ctx, "run pipeline")
-    step.begin()
+    progress.begin("run pipeline")
     uploaded = client.post(
         f"/uploads/{deployment_id}",
         {
@@ -702,13 +693,13 @@ def deploy(
         },
     )
     if uploaded.status_code >= 400:
-        step.fail()
+        progress.fail()
         _raise_for_status(uploaded)
     view = uploaded.json()
     try:
-        view = _follow(ctx, client, deployment_id, view)
+        view = _follow(ctx, client, deployment_id, view, progress=progress)
     except CapError as exc:
-        step.fail()
+        progress.fail()
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
     status_name = str(view.get("status") or "")
@@ -716,9 +707,9 @@ def deploy(
     # Deploy always promotes: done only when Index-visible and serving.
     released = status_name == "promoted" and outcome == "PASS"
     if released:
-        step.ok()
+        progress.ok()
     else:
-        step.fail()
+        progress.fail()
     next_version: str | None = None
     if released:
         next_version = bump_card_yaml(project / "card.yaml", released=version)
@@ -735,6 +726,8 @@ def deploy(
         if not released:
             raise typer.Exit(code=1)
         return
+    if card_note is not None:
+        say(card_note, kind="info")
     if released:
         say(
             f"Released [city]{deployment_id}[/city]  [mute]{agent_id}@{version}[/mute]",
@@ -760,6 +753,7 @@ _STEP_LABELS = {
     "conformance": "conformance",
     "promote": "promote",
 }
+_DEPLOY_STEP_TOTAL = 7
 _POLL_SECONDS = 0.5
 _FOLLOW_SECONDS = 20 * 60
 
@@ -800,27 +794,26 @@ def _settled(view: dict[str, Any]) -> bool:
 
 
 def _follow(
-    ctx: typer.Context, client: _Client, deployment_id: str, view: dict[str, Any]
+    ctx: typer.Context,
+    client: _Client,
+    deployment_id: str,
+    view: dict[str, Any],
+    *,
+    progress: _InlineProgress | None = None,
 ) -> dict[str, Any]:
-    """Poll the deployment and print one line per pipeline step until it settles."""
+    """Poll the deployment and refresh the live progress line until it settles."""
 
-    current: _DeployStep | None = None
     shown: str | None = None
     deadline = time.monotonic() + _FOLLOW_SECONDS
     while True:
         if _settled(view):
-            if current is not None and view.get("status") == "failed":
-                current.fail()
-            elif current is not None:
-                current.ok()
             return view
         step = view.get("step")
         if isinstance(step, str) and step != shown:
-            if current is not None:
-                current.ok()
             shown = step
-            current = _DeployStep(ctx, f"  {_STEP_LABELS.get(step, step)}")
-            current.begin()
+            label = _STEP_LABELS.get(step, step)
+            if progress is not None:
+                progress.relabel(label)
         if time.monotonic() > deadline:
             raise CapError("UPSTREAM_TIMEOUT", f"deployment {deployment_id} is still running")
         time.sleep(_POLL_SECONDS)
@@ -839,7 +832,11 @@ def _follow(
 def rollback(
     ctx: typer.Context,
     agent: str,
-    to: str | None = typer.Option(None, "--to", help="Version to restore; default is the previous release."),
+    to: str | None = typer.Option(
+        None,
+        "--to",
+        help="Version to restore; default is the previous release.",
+    ),
     root: Path = typer.Option(Path("."), "--root"),
 ) -> None:
     """Restore a previous released image without re-running conformance."""
@@ -1094,53 +1091,120 @@ def _emit(
     say(human, kind=kind)
 
 
-class _DeployStep:
-    """Human-mode progress: on a TTY rewrite … → ✓/✗ on the same line."""
+class _InlineProgress:
+    """One live ``[n/m] step`` line. On a TTY each begin/relabel rewrites it."""
 
-    def __init__(self, ctx: typer.Context, name: str) -> None:
+    def __init__(self, ctx: typer.Context, *, total: int) -> None:
         self._human = _state(ctx).get("json") is not True
-        self._name = name
+        self._total = total
+        self._index = 0
+        self._name = ""
         self._started = 0.0
         self._line_mark = 0
+        self._open = False
 
-    def begin(self) -> None:
-        self._started = time.perf_counter()
+    def begin(self, name: str) -> None:
+        """Start the first step or advance to the next (replaces the live line)."""
+
         if not self._human:
+            self._index = self._index + 1 if self._open else 1
+            self._name = name
+            self._started = time.perf_counter()
+            self._open = True
             return
-        say(self._name, kind="run")
+        if self._open:
+            prev = self._label(self._name)
+            elapsed = format_duration(time.perf_counter() - self._started)
+            self._index += 1
+            label = self._label(name)
+            if replace_status(label, kind="run", mark=self._line_mark):
+                self._name = name
+                self._started = time.perf_counter()
+                self._line_mark = line_mark()
+                return
+            say(f"{prev}  [mute]{elapsed}[/mute]", kind="ok")
+            self._name = name
+            self._started = time.perf_counter()
+            say(label, kind="run")
+            self._line_mark = line_mark()
+            return
+        self._index = 1
+        self._name = name
+        self._started = time.perf_counter()
+        self._open = True
+        say(self._label(name), kind="run")
+        self._line_mark = line_mark()
+
+    def relabel(self, name: str) -> None:
+        """Same index, new text (server pipeline phase on the last step)."""
+
+        if not self._human or not self._open:
+            self._name = name
+            return
+        self._name = name
+        label = self._label(name)
+        if replace_status(label, kind="run", mark=self._line_mark):
+            self._line_mark = line_mark()
+            return
+        say(label, kind="run")
         self._line_mark = line_mark()
 
     def ok(self) -> None:
-        self._finish("ok")
+        self._seal("ok")
 
     def fail(self) -> None:
-        self._finish("bad")
+        self._seal("bad")
 
-    def _finish(self, kind: StyleKind) -> None:
-        if not self._human:
+    def _label(self, name: str) -> str:
+        return f"[{self._index}/{self._total}] {name}"
+
+    def _seal(self, kind: StyleKind) -> None:
+        if not self._human or not self._open:
+            self._open = False
             return
-        line = self._line()
+        elapsed = format_duration(time.perf_counter() - self._started)
+        line = f"{self._label(self._name)}  [mute]{elapsed}[/mute]"
         if replace_status(line, kind=kind, mark=self._line_mark):
+            self._open = False
             return
         say(line, kind=kind)
-
-    def _line(self) -> str:
-        elapsed = format_duration(time.perf_counter() - self._started)
-        return f"{self._name}  [mute]{elapsed}[/mute]"
+        self._open = False
 
 
-def _finish_http(step: _DeployStep, response: httpx.Response) -> None:
+def _fail_http(progress: _InlineProgress, response: httpx.Response) -> None:
     if response.status_code >= 400:
-        step.fail()
+        progress.fail()
         _raise_for_status(response)
-    step.ok()
+
+
+def _emit_failing_stages(stages: object) -> None:
+    """Print each FAIL/ERROR stage with its detail (human mode)."""
+
+    if not isinstance(stages, list):
+        return
+    for row in stages:
+        if not isinstance(row, dict):
+            continue
+        if row.get("outcome") not in {"FAIL", "ERROR"}:
+            continue
+        name = row.get("name")
+        stage_name = name if isinstance(name, str) and name else "stage"
+        stage_detail = row.get("detail")
+        if isinstance(stage_detail, str) and stage_detail.strip():
+            say(f"{stage_name}: {stage_detail}", kind="bad")
+        else:
+            say(stage_name, kind="bad")
 
 
 def _emit_conform(ctx: typer.Context, payload: dict[str, Any]) -> None:
     if payload["passed"]:
         _emit(ctx, payload, "Conformance passed", kind="pass")
-    else:
-        _emit(ctx, payload, "Conformance failed", kind="fail")
+        return
+    if _state(ctx).get("json") is True:
+        typer.echo(json.dumps(payload))
+        return
+    say("Conformance failed", kind="fail")
+    _emit_failing_stages(payload.get("stages"))
 
 
 def _emit_status(body: Mapping[str, Any]) -> None:

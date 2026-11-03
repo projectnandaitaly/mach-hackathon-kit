@@ -11,7 +11,7 @@ from cap.core.envelope import verify
 from cap.core.errors import CapError
 from cap.core.jcs import card_digest
 
-from city_conform.agent import Agent
+from city_conform.agent import Agent, HttpResult
 from city_conform.runner import Stage, Verdict, failed, inconclusive, passed, skipped
 from city_conform.world import FIRST, clinical
 
@@ -309,6 +309,40 @@ async def audit(agent: Agent) -> Verdict:
     return passed()
 
 
+def _body_status(body: dict[str, Any]) -> str:
+    status = body.get("status")
+    if isinstance(status, str) and status:
+        return status
+    code = body.get("code")
+    if isinstance(code, str) and code:
+        return f"code={code}"
+    if not body:
+        return "(empty body)"
+    keys = ",".join(sorted(str(key) for key in body)[:6])
+    return f"keys={keys}"
+
+
+def _received_detail(result: HttpResult) -> str:
+    """Explain a failed async-accept check without dumping the whole body."""
+
+    got = _body_status(result.body)
+    return (
+        "expected HTTP 202 with body.status=received "
+        f"(async accept, then renew + final ack); got HTTP {result.status} body.status={got}"
+    )
+
+
+def _renew_detail(
+    msg_id: str,
+    renews: list[tuple[str, int]],
+    acks: list[tuple[str, int, str]],
+) -> str:
+    return (
+        f"msg_id={msg_id}: expected one renew at fence 1 and acks [] or "
+        f"[(msg_id, 1, processed)]; got renews={renews!r} acks={acks!r}"
+    )
+
+
 async def custody_ack(agent: Agent) -> Verdict:
     """A 202 renews once; the only ack allowed is the message's own final ``processed``."""
 
@@ -319,10 +353,11 @@ async def custody_ack(agent: Agent) -> Verdict:
         agent.need(body={"service": "lab", "summary": "visit", "district": 8}, msg_id=msg_id),
     )
     if result.status != 202 or result.body.get("status") != "received":
-        return failed("received")
+        return failed(_received_detail(result))
     acks = _acks_of(agent, msg_id)
-    if _renews_of(agent, msg_id) != [(msg_id, 1)] or acks not in ([], [(msg_id, 1, "processed")]):
-        return failed("renew")
+    renews = _renews_of(agent, msg_id)
+    if renews != [(msg_id, 1)] or acks not in ([], [(msg_id, 1, "processed")]):
+        return failed(_renew_detail(msg_id, renews, acks))
     return passed()
 
 
