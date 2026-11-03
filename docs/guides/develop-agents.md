@@ -30,7 +30,7 @@ city init agent specialist        --template specialist
 city init agent family_counseling --template family_counseling
 ```
 
-Templates in this kit under [`templates/`](../../templates/) match what `city init` copies. Fix the hospital card `service_types` as the rules say (`hospital.physiatry`, not the template `lab`).
+Templates in this kit under [`templates/`](../../templates/) match what `city init` copies. The hospital card already declares `hospital.physiatry`.
 
 ## 4. Edit the brain (optional at first)
 

@@ -156,7 +156,10 @@ def validate_mhm_card(card: Mapping[str, Any]) -> None:
 
 
 def write_card_id(path: Path, agent_id: str) -> bool:
-    """Put the city's ``agent_id`` in ``card.yaml`` and its mailbox. True when it changed."""
+    """Put ``agent_id`` in ``card.yaml`` and set ``endpoints.mailbox`` to the same id.
+
+    True when the file changed. A card with no endpoints block gains one.
+    """
 
     text = path.read_text(encoding="utf-8")
     line = f"agent_id: {agent_id}"
@@ -164,21 +167,27 @@ def write_card_id(path: Path, agent_id: str) -> bool:
         updated = _AGENT_LINE.sub(line, text, count=1)
     else:
         updated = f"{line}\n{text}"
-    if _ENDPOINTS_BLOCK.search(updated):
+    if _MAILBOX_LINE.search(updated):
         updated = _MAILBOX_LINE.sub(lambda match: f"{match.group(1)}{agent_id}", updated, count=1)
+    elif _ENDPOINTS_BLOCK.search(updated):
+        updated = _ENDPOINTS_BLOCK.sub(
+            lambda match: _with_mailbox(match.group(0), agent_id),
+            updated,
+            count=1,
+        )
+    else:
+        if updated and not updated.endswith("\n"):
+            updated += "\n"
+        updated += f"endpoints:\n  mailbox: {agent_id}\n"
     if updated == text:
         return False
     path.write_text(updated, encoding="utf-8")
     return True
 
 
-def drop_card_id(path: Path) -> None:
-    """A fresh scaffold has no id: Deploy mints it at the first deploy (ADR-085)."""
-
-    text = path.read_text(encoding="utf-8")
-    text = _AGENT_LINE.sub("", text, count=1).lstrip("\n")
-    text = _ENDPOINTS_BLOCK.sub("", text, count=1)
-    path.write_text(text, encoding="utf-8")
+def _with_mailbox(block: str, agent_id: str) -> str:
+    body = block if block.endswith("\n") else f"{block}\n"
+    return f"{body}  mailbox: {agent_id}\n"
 
 
 def next_patch_version(version: str) -> str:

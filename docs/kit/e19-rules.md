@@ -253,7 +253,7 @@ city init agent specialist        --template specialist
 city init agent family_counseling --template family_counseling
 ```
 
-Each command creates a folder with `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md`, and a `Dockerfile`, with your team already in the card (`agent:<your team>/<slug>`).
+Each command creates a folder with `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md`, and a `Dockerfile`. The card's `team` is `team:<your team>`. `agent_id` and `endpoints.mailbox` are both `agent:` plus a new 12-character id. `name` is the folder name.
 
 
 

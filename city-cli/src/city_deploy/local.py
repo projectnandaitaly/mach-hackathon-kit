@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, TextIO
@@ -35,7 +36,8 @@ from city_sdk.market import Market, Need, Peer
 from city_sdk.ports import MemoryAttest, MemoryCare, MemoryIndex, MemoryLedger, MemoryRelay
 from city_sdk.utils.logging import configure, uvicorn_log_config
 
-from city_deploy.card_schema import drop_card_id
+from city_deploy.agent_ids import new_rid
+from city_deploy.card_schema import write_card_id
 from city_deploy.chat_play import (
     CHARACTERS,
     SESSION_COMMANDS,
@@ -99,14 +101,16 @@ def init_project(
     *,
     template: str = "booking_centre",
     team_id: str,
+    rid: Callable[[], str] | None = None,
 ) -> dict[str, str]:
     """Scaffold ``root/<name>/`` from a starter template.
 
     ``--root`` is the parent directory. The agent project always lands in a
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
-    template placeholder in ``card.yaml`` / ``city.yaml``. Team credentials
-    stay in the user config store (``~/.config/city/teams/<team>/``), not
-    inside the project.
+    template placeholder in ``card.yaml`` / ``city.yaml``. ``agent_id`` and
+    ``endpoints.mailbox`` are both ``agent:<rid>``, a fresh 12-character id.
+    Team credentials stay in the user config store
+    (``~/.config/city/teams/<team>/``), not inside the project.
     """
     if template not in _TEMPLATES:
         raise CapError("SCHEMA_INVALID", "template")
@@ -141,7 +145,7 @@ def init_project(
         target.write_text(text, encoding="utf-8")
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
-    drop_card_id(dest / "card.yaml")
+    write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
     return {
         "template": template,
         "name": name,
