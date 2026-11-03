@@ -568,6 +568,10 @@ class DeployService:
             except RolloutFailed as exc:
                 self._pod_failed(deployment, exc)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
+            except CapError as exc:
+                return self._refuse(
+                    deployment, "ERROR", "rollout failed", exc.message or exc.code
+                )
         deployment.step = "conformance"
         try:
             report = await self._run_suite(deployment, profile)

@@ -233,7 +233,8 @@ class KubernetesClient:
             headers={"Authorization": self._authorization(), "Content-Type": content_type},
         )
         if response.status_code >= 300:
-            raise CapError("POLICY_VIOLATION", f"gke apply {response.status_code}")
+            detail = _apply_refusal(response)
+            raise CapError("POLICY_VIOLATION", f"gke apply {response.status_code}: {detail}")
         try:
             body = response.json()
         except ValueError:
@@ -779,10 +780,18 @@ def identity_name(service: str, version: str) -> str:
 
 
 def dns_name(value: str) -> str:
+    """A Kubernetes DNS-1035 label (Service, HTTPRoute, and HealthCheckPolicy names).
+
+    Minted rids (ADR-085) are Crockford base32 and may start with a digit; Service
+    names may not, so a leading digit is prefixed with ``a``.
+    """
+
     cleaned = "".join(char if char.isalnum() or char == "-" else "-" for char in value.lower())
     cleaned = cleaned.strip("-")[:63]
     if not cleaned:
         raise CapError("SCHEMA_INVALID", "name")
+    if cleaned[0].isdigit():
+        cleaned = ("a" + cleaned)[:63]
     return cleaned
 
 
@@ -1269,6 +1278,31 @@ def _deployment_ready(found: Mapping[str, Any] | None) -> bool:
     ready = int(status.get("readyReplicas", 0))
     # replicas above updated means the previous pod is still in the Service.
     return updated >= want and ready >= want and int(status.get("replicas", want)) <= updated
+
+
+def _apply_refusal(response: httpx.Response) -> str:
+    """Short Kubernetes Status message from a failed apply, for the deployment detail."""
+
+    try:
+        body = response.json()
+    except ValueError:
+        return (response.text or "unreadable body")[:300]
+    if not isinstance(body, Mapping):
+        return "unreadable body"
+    message = body.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()[:500]
+    details = body.get("details")
+    causes = details.get("causes") if isinstance(details, Mapping) else None
+    if isinstance(causes, list):
+        parts = [
+            str(row.get("message", "")).strip()
+            for row in causes
+            if isinstance(row, Mapping) and row.get("message")
+        ]
+        if parts:
+            return "; ".join(parts)[:500]
+    return "no detail"
 
 
 def _pod_problem(pods: Mapping[str, Any] | None, deployment: str) -> tuple[str, str, str] | None:

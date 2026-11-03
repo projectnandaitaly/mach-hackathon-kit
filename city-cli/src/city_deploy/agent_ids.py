@@ -17,12 +17,14 @@ from city_index.families import FAMILIES, family_of
 
 ID_FAMILIES = (*FAMILIES, "b2b")
 _CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
+# Service names are DNS-1035 and must start with a letter; keep the rid the same shape.
+_CROCKFORD_LETTER = "abcdefghjkmnpqrstvwxyz"
 RID_LENGTH = 12
 MINTED = re.compile(r"^agent:[0-9a-hjkmnp-tv-z]{12}$")
 
 
 def new_rid(choice: Callable[[str], str] = secrets.choice) -> str:
-    return "".join(choice(_CROCKFORD) for _ in range(RID_LENGTH))
+    return choice(_CROCKFORD_LETTER) + "".join(choice(_CROCKFORD) for _ in range(RID_LENGTH - 1))
 
 
 def id_name(agent_id: str) -> str:
