@@ -279,10 +279,12 @@ class Harness:
             return 409, dict(prior.body)
         if not isinstance(envelope.get("sig"), dict):
             raise CapError("SIGNATURE_INVALID", "sig is required", msg_id)
+        # ADR-098: Relay already checked freshness at accept; do not 410 on queue lag.
         verify(
             _without_grant(envelope),
             now=self.clock.now(),
             key_for_kid=await self._keys_for(envelope),
+            check_freshness=False,
         )
         if msg_id in self._running:
             if self._running_digest.get(msg_id) != fingerprint:

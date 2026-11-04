@@ -86,10 +86,13 @@ def verify(
     required_permission: str | None = None,
     target_visible: Callable[[str], bool] | None = None,
     record_verifier: Callable[[Mapping[str, object]], None] | None = None,
+    check_freshness: bool = True,
 ) -> None:
-    """Verify signature, ``from``/``kid``, grant chain, expiry, and clock skew.
+    """Verify signature, ``from``/``kid``, grant chain, and (by default) freshness.
 
     ``target_visible`` defaults to true. The Relay supplies the Index check.
+    ``check_freshness`` is false for Relay-mediated ``/invoke`` (ADR-098): accept
+    already checked ``sent_at`` / ``expires_at``; queue lag must not 410 the push.
     """
     if now.tzinfo is None:
         raise CapError("SCHEMA_INVALID", "now must be timezone-aware")
@@ -144,13 +147,14 @@ def verify(
             required_permission=required_permission,
             record_verifier=record_verifier,
         )
-    sent_at = parse_time(unsigned["sent_at"])
-    if abs(now - sent_at) > _SKEW:
-        raise CapError("EXPIRED", "sent_at outside ±120s", msg)
-    expires_raw = unsigned.get("expires_at")
-    expires_at = parse_time(expires_raw) if expires_raw is not None else sent_at + _DEFAULT_TTL
-    if now > expires_at:
-        raise CapError("EXPIRED", "expires_at passed", msg)
+    if check_freshness:
+        sent_at = parse_time(unsigned["sent_at"])
+        if abs(now - sent_at) > _SKEW:
+            raise CapError("EXPIRED", "sent_at outside ±120s", msg)
+        expires_raw = unsigned.get("expires_at")
+        expires_at = parse_time(expires_raw) if expires_raw is not None else sent_at + _DEFAULT_TTL
+        if now > expires_at:
+            raise CapError("EXPIRED", "expires_at passed", msg)
     visible = True if target_visible is None else target_visible(recipient)
     if not visible:
         raise CapError("TARGET_NOT_VISIBLE", recipient, msg)

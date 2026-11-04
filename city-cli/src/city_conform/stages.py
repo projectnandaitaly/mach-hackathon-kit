@@ -34,6 +34,10 @@ _HEALTH_FIELDS = (
     "card_digest",
     "uptime_s",
 )
+# Discarded before the 20 timed samples so a cold pod does not trip p99.
+HEALTH_WARMUP = 5
+_HEALTH_P99_S = 0.3
+_HEALTH_SAMPLES = 20
 _LATER = "owned by a later epic"
 
 
@@ -106,6 +110,12 @@ async def card_declarations(agent: Agent) -> Verdict:
 
 
 async def health(agent: Agent) -> Verdict:
+    for _ in range(HEALTH_WARMUP):
+        result = await agent.request("GET", "/health?probe=ready")
+        if result.status != 200 or result.body.get("status") != "ok":
+            return failed("ready")
+        if any(field not in result.body for field in _HEALTH_FIELDS):
+            return failed("fields")
     samples: list[float] = []
     for probe in ("live", "ready"):
         started = time.perf_counter()
@@ -115,14 +125,14 @@ async def health(agent: Agent) -> Verdict:
             return failed(probe)
         if any(field not in result.body for field in _HEALTH_FIELDS):
             return failed("fields")
-    for _ in range(18):
+    for _ in range(_HEALTH_SAMPLES - 2):
         started = time.perf_counter()
         result = await agent.request("GET", "/health?probe=ready")
         samples.append(time.perf_counter() - started)
         if result.status != 200:
             return failed("ready")
     ordered = sorted(samples)
-    if ordered[-1] >= 0.3:
+    if ordered[-1] >= _HEALTH_P99_S:
         return failed("p99")
     return passed()
 

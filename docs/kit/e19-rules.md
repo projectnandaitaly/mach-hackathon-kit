@@ -112,7 +112,7 @@ The grant carries exactly that role's permissions. A booking centre grant cannot
 - **Disclose only what is needed.** Ask for personal data with a purpose (`market.request_data`, `market.ask_consent`). The citizen answers only to a purpose it accepts.
 - **No retry on a 4xx.** A refusal is final for that request. Retries on 5xx and timeouts are fine; idempotency is by `msg_id`.
 - **Ratings from your own team count zero.**
-- **Equal resources.** Every team has the same model budget, rate limits, and templates.
+- **Equal resources.** Every team has the same model budget and templates.
 - **Team code imports only `city_sdk.market`.** The harness handles transport, signing, leases, and acks. Do not open connections or sign messages in your brain.
 - **Do not retire agents during the event** (`city retire`). A retired agent cannot be confirmed, and its slug cannot be reused.
 
@@ -473,7 +473,7 @@ async def main(need, market):
 | `code` | What it means | What to do |
 |---|---|---|
 | `KEY_UNKNOWN` | This process has no team key | On the laptop, run `city login`. In a released agent, run `city login`, then `city deploy` that agent again: the key is written into the pod at roll-out |
-| `RATE_LIMITED` | Too many calls this minute, or the team has reached its spend ceiling | Call less often; once the ceiling is reached, the rest of the day runs without a model |
+| `RATE_LIMITED` | Unused on the city Gateway during the hackathon (no RPM, no spend stop) | Continue; if you still see it, treat it as a transient platform refusal |
 | `SCHEMA_INVALID` | `messages` is empty or not a list of `{"role", "content"}` strings | Fix the call. Nothing was sent |
 | `GRANT_PERMISSION_DENIED`, `POLICY_VIOLATION` | The Gateway refused this route or model | Use `market.llm` as shown; the alias is fixed |
 | `UPSTREAM_TIMEOUT` | The Gateway or the model did not answer in time | Continue without the model for this message |
