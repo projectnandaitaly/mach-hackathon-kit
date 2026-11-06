@@ -1596,7 +1596,7 @@ class AdminCity(BaseModel):
         extra="forbid",
     )
     ceiling: conint(ge=1, le=8)
-    spawn_per_minute: confloat(ge=0.1, le=2.0)
+    spawn_per_minute: confloat(ge=0.0, le=10.0)
     citizens_started: conint(ge=0) = Field(
         ..., description="Citizens started per ASST. Every ASST starts the same ones."
     )
@@ -1616,7 +1616,7 @@ class CityConfigureRequest1(BaseModel):
         extra="forbid",
     )
     ceiling: conint(ge=1, le=8)
-    spawn_per_minute: confloat(ge=0.1, le=2.0) | None = None
+    spawn_per_minute: confloat(ge=0.0, le=10.0) | None = None
     reason: E19Reason
 
 
@@ -1625,7 +1625,7 @@ class CityConfigureRequest2(BaseModel):
         extra="forbid",
     )
     ceiling: conint(ge=1, le=8) | None = None
-    spawn_per_minute: confloat(ge=0.1, le=2.0)
+    spawn_per_minute: confloat(ge=0.0, le=10.0)
     reason: E19Reason
 
 
@@ -2063,8 +2063,8 @@ class ScoreboardTeam(BaseModel):
     agents: list[Agent8]
 
 
-class PerMinuteItem(RootModel[confloat(ge=0.0, le=2.0)]):
-    root: confloat(ge=0.0, le=2.0)
+class PerMinuteItem(RootModel[confloat(ge=0.0, le=10.0)]):
+    root: confloat(ge=0.0, le=10.0)
 
 
 class ScoreboardArrivals(BaseModel):
