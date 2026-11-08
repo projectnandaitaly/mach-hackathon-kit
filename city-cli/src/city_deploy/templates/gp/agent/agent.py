@@ -47,7 +47,7 @@ async def main(need: Need, market: Market) -> None:
             procedure=str(row["procedure"]),
             priority=str(row["priority"]),
             symptom_code=str(row["symptom_code"]),
-            prescription_number=number_for(message),
+            prescription_number=number_for(market, message),
             text="Here is your prescription. Book it with the booking centre.",
         )
         # The citizen moves on to the booking centre; the city ignores this close if it has.
@@ -94,14 +94,15 @@ async def renew(market: Market, message: Message, prescription_number: str) -> N
         message.sender,
         procedure=str(issued["procedure"]),
         priority=str(issued["priority"]),
-        prescription_number=number_for(message, "R"),
+        prescription_number=number_for(market, message, "R"),
         text="Your prescription was expired; here is a new one.",
     )
 
 
-def number_for(message: Message, suffix: str = "") -> str:
-    """A prescription number derived from the citizen and the journey, so a replay matches."""
+def number_for(market: Market, message: Message, suffix: str = "") -> str:
+    """Derived from this agent, the citizen and the journey: a replay gets the same number,
+    and another team serving the same citizen gets a different one (numbers are city-wide)."""
 
-    raw = f"{message.sender}|{message.need_id or message.msg_id}"
+    raw = f"{market.agent_id}|{message.sender}|{message.need_id or message.msg_id}"
     core = hashlib.sha256(raw.encode()).hexdigest().upper()[:32]
     return "prescription_number-" + core + (f"-{suffix}" if suffix else "")

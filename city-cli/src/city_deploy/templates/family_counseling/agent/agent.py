@@ -221,7 +221,7 @@ async def file(market: Market, message: Message, booking_id: str, consent) -> No
                 procedure=str(step["procedure"]),
                 priority=str(step["priority"]),
                 follow_up_of=booking_id,
-                prescription_number=number_for(message, "F"),
+                prescription_number=number_for(market, message, "F"),
             )
             follow_up = str(issued["prescription_number"])
             break
@@ -324,8 +324,8 @@ def slot_by_id(world, slot_id: str):
     return {}
 
 
-def number_for(message: Message, suffix: str) -> str:
-    raw = f"{message.sender}|{message.need_id or message.msg_id}"
+def number_for(market: Market, message: Message, suffix: str) -> str:
+    raw = f"{market.agent_id}|{message.sender}|{message.need_id or message.msg_id}"
     core = hashlib.sha256(raw.encode()).hexdigest().upper()[:32]
     return f"prescription_number-{core}-{suffix}"
 
