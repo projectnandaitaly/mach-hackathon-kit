@@ -120,6 +120,7 @@ _ACTS = frozenset(
         "booking.receipt",
         "escalate.emergency",
         "hold",
+        "case.closed",
     }
 )
 
@@ -450,6 +451,16 @@ class Market:
             await self._post(
                 citizen, "escalate.emergency", _speech({"reason": reason}, text), None, None
             )
+
+    async def close_case(
+        self, citizen: Peer | str, *, answer: str | None = None, text: str | None = None
+    ) -> str:
+        """Tell the citizen this agent has finished, hand-offs and ledger writes included
+        (ADR-106). The judge settles the journey from here; later facts are not scored.
+        ``answer`` is the ``msg_id`` of the final answer, when there is one."""
+
+        body: dict[str, object] = {} if answer is None else {"answer": answer}
+        return await self._post(citizen, "case.closed", _speech(body, text), None, None)
 
     async def rate(self, peer: Peer, *, score: int) -> None:
         await self._attest.rate(peer.agent_id, score)
