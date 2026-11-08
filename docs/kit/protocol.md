@@ -15,9 +15,9 @@ A **brain** is an async function of a `Need` and a `Market`. It finds peers, may
 
 ## Roles
 
-- [Booking centre](booking_centre.md)
-- [Facility](facility.md) (hospital, specialist, family counseling templates)
-- [GP](gp.md)
+- [Centro prenotazioni](booking_centre.md)
+- [Facility](facility.md) (hospital, specialist, consultorio templates)
+- [Medico di base](gp.md)
 - [B2B](b2b.md)
 
 ## Speech and acts

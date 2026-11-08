@@ -30,7 +30,7 @@ async def main(need: Need, market: Market) -> None:
     message = understood(need.message) if need.message is not None else None
     if need.is_emergency or (message is not None and message.body.get("is_emergency") is True):
         citizen = message.sender if message and message.sender.startswith("citizen:") else None
-        await market.escalate(reason="red_flag", citizen=citizen, text="I am escalating this now.")
+        await market.escalate(reason="red_flag", citizen=citizen, text="Sto segnalando un'emergenza.")
         return
     if message is None:
         return

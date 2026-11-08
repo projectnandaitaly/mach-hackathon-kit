@@ -23,7 +23,7 @@ async def main(need: Need, market: Market) -> None:
         raise OutOfScope()
     message = understood(need.message) if need.message is not None else None
     if need.is_emergency or (message is not None and message.body.get("is_emergency") is True):
-        await market.escalate(reason="red_flag", text="I am escalating this now.")
+        await market.escalate(reason="red_flag", text="Sto segnalando un'emergenza.")
         return
     handler = HANDLERS.get(message.type) if message is not None else None
     if message is not None and handler is not None:
@@ -40,7 +40,7 @@ async def on_need(market: Market, message: Message) -> None:
         return
     world = await read_world(market)
     if red_flag(str(body.get("text") or ""), world):
-        await market.escalate(reason="red_flag", text="This needs urgent care.")
+        await market.escalate(reason="red_flag", text="Serve assistenza urgente.")
         return
     now = await market.agenda_now()
     rules = {str(rule["rule_id"]) for rule in await market.active_rules()}
@@ -172,10 +172,10 @@ async def on_checkin(market: Market, message: Message) -> None:
         booking_id=booking_id,
         ledger_ref=recorded["ledger_ref"],
         agenda_time=recorded["agenda_time"],
-        text="Check-in recorded. Welcome.",
+        text="Accettazione registrata. Benvenuto.",
     )
     if FAMILY != "specialist_care":
-        await market.close_case(message.sender, text="Your visit is registered. All done.")
+        await market.close_case(message.sender, text="La visita è registrata. Tutto fatto.")
         return
     consent = message.body.get("consent_ref")
     if isinstance(consent, str):
@@ -231,10 +231,10 @@ async def file(market: Market, message: Message, booking_id: str, consent) -> No
         outcome_code=OUTCOME,
         follow_up_prescription_number=follow_up,
         consent_ref=consent,
-        text="Visit complete; report filed.",
+        text="Visita conclusa; referto archiviato.",
     )
     # With a follow-up the citizen goes back to a booking centre; the city then ignores this.
-    await market.close_case(message.sender, text="My part is done.")
+    await market.close_case(message.sender, text="Per quanto mi riguarda, ho concluso.")
 
 
 HANDLERS = {

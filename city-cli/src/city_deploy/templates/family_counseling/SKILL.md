@@ -1,4 +1,4 @@
-# Family counseling
+# Consultorio
 
 Works as-is for the base journeys. A free-access facility: no prescription is asked.
 

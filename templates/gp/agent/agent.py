@@ -25,9 +25,9 @@ async def main(need: Need, market: Market) -> None:
     message = understood(need.message) if need.message is not None else None
     citizen = message.sender if message and message.sender.startswith("citizen:") else None
     if need.is_emergency or (message is not None and message.body.get("is_emergency") is True):
-        await market.escalate(reason="red_flag", citizen=citizen, text="I am escalating this now.")
+        await market.escalate(reason="red_flag", citizen=citizen, text="Sto segnalando un'emergenza.")
         if citizen is not None:
-            await market.close_case(citizen, text="Emergency services have your case.")
+            await market.close_case(citizen, text="I servizi di emergenza hanno preso in carico il caso.")
         return
     if message is None or citizen is None or message.type != "need.request":
         return
@@ -37,8 +37,8 @@ async def main(need: Need, market: Market) -> None:
     text = str(body.get("text") or "")
     protocols = (await market.world()).get("world", {}).get("protocols", [])
     if red_flag(text, protocols):
-        await market.escalate(reason="red_flag", citizen=citizen, text="This needs urgent care.")
-        await market.close_case(citizen, text="Emergency services have your case.")
+        await market.escalate(reason="red_flag", citizen=citizen, text="Serve assistenza urgente.")
+        await market.close_case(citizen, text="I servizi di emergenza hanno preso in carico il caso.")
         return
     row = protocol(protocols, symptom, text)
     if row is not None:
@@ -48,10 +48,10 @@ async def main(need: Need, market: Market) -> None:
             priority=str(row["priority"]),
             symptom_code=str(row["symptom_code"]),
             prescription_number=number_for(market, message),
-            text="Here is your prescription. Book it with the booking centre.",
+            text="Ecco la sua impegnativa. La prenoti presso il centro prenotazioni.",
         )
         # The citizen moves on to the booking centre; the city ignores this close if it has.
-        await market.close_case(citizen, text="My part is done.")
+        await market.close_case(citizen, text="Per quanto mi riguarda, ho concluso.")
         return
     if isinstance(prescription_number, str):
         await renew(market, message, prescription_number)
@@ -95,7 +95,7 @@ async def renew(market: Market, message: Message, prescription_number: str) -> N
         procedure=str(issued["procedure"]),
         priority=str(issued["priority"]),
         prescription_number=number_for(market, message, "R"),
-        text="Your prescription was expired; here is a new one.",
+        text="La sua impegnativa era scaduta; eccone una nuova.",
     )
 
 

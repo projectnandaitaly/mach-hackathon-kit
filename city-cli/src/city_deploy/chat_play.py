@@ -15,11 +15,11 @@ from cap.core.errors import CapError
 
 CHARACTERS: tuple[tuple[str, str], ...] = (
     ("citizen", "A citizen. Most journeys start here."),
-    ("gp", "The GP. Applies the protocol table and does not diagnose."),
-    ("booking_centre", "The booking centre. Books from a prescription."),
-    ("hospital", "The hospital (physiatry). Serves its own slots and check-ins."),
-    ("specialist", "The cardiology specialist. Visit, report, follow-up."),
-    ("family_counseling", "Family counseling. Free access, no prescription."),
+    ("gp", "The medico di base. Applies the protocol table and does not diagnose."),
+    ("booking_centre", "The centro prenotazioni. Books from a prescription."),
+    ("hospital", "The ospedale (physiatry). Serves its own slots and check-ins."),
+    ("specialist", "The cardiology specialista. Visit, report, follow-up."),
+    ("family_counseling", "Consultorio. Free access, no prescription."),
 )
 
 # Meta commands. The whole line, any prompt: before a character is picked and after.
@@ -190,7 +190,7 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
                 "/confirm offer=of-slot-local-1 consent=local-ok",
                 "Accept an offer",
                 "Citizen confirms offer of-slot-local-1 with consent local-ok. "
-                "The template booking centre does not read confirm; your brain can.",
+                "The template centro prenotazioni does not read confirm; your brain can.",
                 {
                     "type": "confirm",
                     "from": sender,
@@ -274,7 +274,7 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
             PlayMove(
                 f"/need procedure={procedure}",
                 "Ask for slots",
-                f"Booking centre asks this facility for {procedure}. "
+                f"Centro prenotazioni asks this facility for {procedure}. "
                 + CODES[procedure]
                 + ". Search criteria only: no citizen data before consent. "
                 "The facility template holds a peer instead of listing its own slots, "
@@ -289,7 +289,7 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
             PlayMove(
                 "/confirm offer=of-slot-local-1 consent=local-ok",
                 "Confirm a hold",
-                "Booking centre confirms a slot after the citizen consented. "
+                "Centro prenotazioni confirms a slot after the citizen consented. "
                 "The template facility brain does not read confirm.",
                 {
                     "type": "confirm",
@@ -313,9 +313,9 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
             PlayMove(
                 f"/offer procedure={procedure}",
                 "Offer a slot",
-                f"This facility offers {procedure} to the booking centre. "
+                f"This facility offers {procedure} to the centro prenotazioni. "
                 + CODES[procedure]
-                + ". The template booking centre does not read offer messages.",
+                + ". The template centro prenotazioni does not read offer messages.",
                 {
                     "type": "offer",
                     "from": sender,
@@ -330,7 +330,7 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
             PlayMove(
                 "/cancel offer=of-slot-local-1",
                 "Cancel an offer",
-                "This facility withdraws of-slot-local-1. The template booking centre "
+                "This facility withdraws of-slot-local-1. The template centro prenotazioni "
                 "does not read cancel.",
                 {
                     "type": "cancel",
@@ -494,7 +494,7 @@ def _explain_action(action: Mapping[str, object]) -> str:
         detail = action.get("detail", "")
         return (
             f"Prescription register ({detail}). The GP wrote a protocol prescription. "
-            "The citizen takes that number to the booking centre."
+            "The citizen takes that number to the centro prenotazioni."
         )
     if kind == "checkin":
         return f"Check-in on the local ledger ({action.get('detail', '')})."
