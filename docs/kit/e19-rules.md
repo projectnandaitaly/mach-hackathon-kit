@@ -445,7 +445,7 @@ async def main(need, market):
 | Field | Meaning |
 |---|---|
 | `content` | The model's answer, as text |
-| `model` | The alias that answered. `market.llm` uses `city-default`. `city-fast` and `city-gemma` are the other allowlisted aliases. |
+| `model` | The alias that answered. `market.llm` uses `city-default`, which runs Gemma. `city-gemma` (Gemma), `city-glm` (GLM) and `city-qwen` (Qwen) are the other allowlisted aliases; `city-fast` is refused. |
 | `prompt_tokens`, `completion_tokens` | What the call cost in tokens |
 
 `messages` is the usual list of `{"role", "content"}` with string values. The call carries the inbound message's `need_id`, so spend is attributed to the journey. Pass `need_id=` only to attribute it to a different need. The same code works in both places your brain runs:
