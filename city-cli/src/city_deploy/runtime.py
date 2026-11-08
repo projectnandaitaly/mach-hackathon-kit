@@ -403,8 +403,9 @@ class GkeRuntime:
         slug = dns_name(id_name(agent_id))
         service = slug if percent == 100 else f"{slug}-candidate"
         self._placed[agent_id] = (namespace, service, version)
-        if percent == 100:
-            self._keep[agent_id] = workload_name(service, version)
+        # Always the Deployment this placement applies: a candidate waits on its own pods,
+        # never on the serving Deployment of the previous release.
+        self._keep[agent_id] = workload_name(service, version)
         replicas = 0 if percent == 0 or agent_id in self.drained else self._replicas(agent_id)
         rows = workloads(
             agent_id=agent_id,
@@ -640,7 +641,34 @@ class GkeRuntime:
         namespace = namespace_for(str(serving.card.get("team", "team:unknown")))
         slug = dns_name(id_name(agent_id))
         self._placed[agent_id] = (namespace, slug, serving.version)
-        self._keep[agent_id] = slug
+        self._keep[agent_id] = self._serving_deployment(namespace, slug, serving.version)
+
+    def _serving_deployment(self, namespace: str, slug: str, version: str) -> str:
+        """The Deployment whose pods serve ``version``.
+
+        After ``promote_candidate`` the serving Service selects the candidate's pods, so a
+        restored book cannot assume the Deployment is named after the slug.
+        """
+
+        read = getattr(self.client, "get", None)
+        if not callable(read):
+            return slug
+        try:
+            listed = read(f"/apis/apps/v1/namespaces/{namespace}/deployments")
+        except CapError:
+            return slug
+        items = listed.get("items") if isinstance(listed, Mapping) else None
+        apps = {slug, dns_name(f"{slug}-candidate")}
+        found: list[str] = []
+        for item in items if isinstance(items, list) else []:
+            spec = item.get("spec") or {}
+            template = ((spec.get("template") or {}).get("metadata") or {}).get("labels") or {}
+            if template.get("app") in apps and template.get("version") == version:
+                name = str((item.get("metadata") or {}).get("name", ""))
+                if name and spec.get("replicas") != 0:
+                    found.append(name)
+        # Several matches: the slug Deployment is the one a direct release applied.
+        return slug if slug in found or not found else found[0]
 
     def apply_scale(self, agent_id: str) -> None:
         placed = self._placed.get(agent_id)
