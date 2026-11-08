@@ -409,17 +409,18 @@ def _acks_of(agent: Agent, msg_id: str) -> list[tuple[str, int, str]]:
 
 
 async def terminal_once(agent: Agent) -> Verdict:
-    before = agent.effect_count()
-    expired = await agent.request("POST", "/invoke", agent.expired_need())
-    if expired.status != 410 or expired.body.get("code") != "EXPIRED":
-        return failed("expired")
-    if agent.effect_count() != before:
-        return failed("expired effect")
+    # ADR-098: the Relay checked freshness at accept; a push that queued past
+    # ``expires_at`` is still a delivery, not a 410.
+    late = await agent.request("POST", "/invoke", agent.expired_need())
+    if late.status >= 300:
+        return failed("late delivery")
     msg_id = str(uuid.uuid4())
     payload = agent.need(body={"service": "lab", "summary": "visit"}, msg_id=msg_id)
     await agent.request("POST", "/invoke", payload)
     await agent.settle(msg_id, 1)
     acks = [row for row in agent.ack_log() if row[0] == msg_id]
+    if len(acks) != 1:
+        return failed("terminal")
     await agent.request("POST", "/invoke", payload)
     again = [row for row in agent.ack_log() if row[0] == msg_id]
     if len(again) != len(acks):

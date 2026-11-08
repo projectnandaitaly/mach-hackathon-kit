@@ -16,6 +16,7 @@ A **team** is one competing group. Each team owns one **ASST** (Agency for Socia
 - [Templates](#templates)
 - [Who sends what](#who-sends-what)
 - [Free text / chat on the team edge (ADR-084)](#free-text--chat-on-the-team-edge-adr-084)
+- [Closing a case (ADR-106)](#closing-a-case-adr-106)
 - [Rubric](#rubric)
 - [How to develop an agent](#how-to-develop-an-agent)
 - [Conformance](#conformance)
@@ -76,7 +77,7 @@ Messages on the team edge are **chat text** (ADR-084): Market verbs still name t
 |---|---|
 | Play | One world and one agenda clock for every ASST; the first citizen arrives two real minutes later |
 | Agenda weekdays, any hour | Citizens keep arriving. None arrive on an agenda Saturday or Sunday (12 real minutes in every 42) |
-| A journey ends | About one real minute later the judge writes its verdict and ratings, and the scoreboard moves |
+| A journey ends | The judge writes its verdict and ratings, and the scoreboard moves: at once when the agent in charge closes the case, otherwise about one real minute later (see [Closing a case](#closing-a-case-adr-106)) |
 | City Hall raises the level | Citizens who arrive from then on are drawn up to the new level; citizens already running keep theirs |
 | Stop | The run ends. Open journeys are not judged |
 
@@ -130,15 +131,15 @@ The grant carries exactly that role's permissions. A booking centre grant cannot
 | `SKILL.md` | What the template brain does |
 | `Dockerfile` | Built by the city from the `city-sdk` base image; leave it as it is |
 
-The template brains are a starting point that passes conformance, not a winning strategy:
+The template brains work as they are: five agents deployed from the templates, without edits, serve the base care journeys end to end and pass conformance. They are a starting point, not a winning strategy: they offer the earliest slots, ask no model, and handle the rules of play (P1–P3) in the simplest way.
 
 | Template | What its brain does |
 |---|---|
-| `booking_centre` | On an `prescription_number`, verifies the prescription; finds facilities and asks the first one in the order returned; escalates an emergency |
-| `facility` | Finds peers and holds the first; on `checkin`, records it and confirms |
-| `gp` | On a `symptom_code`, looks it up in `market.world()` protocols and prescribes; a red flag escalates |
-| `specialist` | On a `need.request` with an `prescription_number`, verifies it and offers the first slot of that procedure; on `checkin`, records it, confirms, and files the report |
-| `family_counseling` | On a `need.request`, offers the first free-access slot of its specialty without asking for a prescription; on `checkin`, records it and confirms |
+| `gp` | Looks the `symptom_code` (or a keyword in the text) up in the protocol table and prescribes; escalates a red flag; renews an expired prescription (P1). Closes the case after a prescription or an escalation |
+| `booking_centre` | Verifies the prescription (sends the citizen back to the GP when it is missing or expired), asks booking consent and the citizen's days, offers up to three own slots inside the priority deadline, asks facilities of other ASSTs when none fits (P2 consent before crossing), offers relaxed alternatives on an empty set, books through the facility and forwards the receipt; rebooks after a facility cancel. Never closes the case: the visit is still ahead |
+| `facility` (hospital) | Offers its own slots to citizens and booking centres, holds and commits a confirmed slot (a 4xx is declined, never retried), records the check-in. Closes the case after the check-in |
+| `specialist` | As the hospital; after the check-in asks consent to share the report, files it (with the protocol's follow-up prescription when there is one). Closes the case after the report |
+| `family_counseling` | As the hospital, with free-access slots and no prescription. Closes the case after the check-in |
 
 Your brain sees the inbound message as `need.message` (`type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, and `text`). On the team edge inbound `type` is `chat`; call `understood(need.message)` (from `city_sdk.market`) if you want the act name and scalar fields parsed back. Replies stay in the journey's conversation by default. Pass scalar fields on Market verbs (and optional `text=`); the SDK renders them as one chat line.
 
@@ -146,7 +147,7 @@ Your brain sees the inbound message as `need.message` (`type`, `sender`, `msg_id
 
 | Group | Verbs |
 |---|---|
-| Discovery and messages | `find_facilities`, `find_peers`, `ask`, `send`, `rank`, `escalate`, `rate` |
+| Discovery and messages | `find_facilities`, `find_peers`, `ask`, `send`, `rank`, `escalate`, `rate`, `close_case` |
 | Memory | `remember`, `recall`, `history` |
 | World and time | `world`, `agenda_now`, `active_rules` |
 | Prescriptions | `prescribe`, `verify_prescription` |
@@ -180,6 +181,7 @@ The message types are those of the `mhm/1.0` profile. The fields below are the o
 | citizen ↔ facility | `checkin` | `booking_id`, `ledger_ref`; optional `text`; the facility answers with the register's values |
 | specialist → citizen | `data.request`, `report`, `prescription` | ask consent with purpose `report_sharing` (`market.ask_consent`); file the report under the returned `consent_ref`; optional follow-up prescription via `market.prescribe(..., follow_up_of=<booking_id>)` and `file_report(..., follow_up_prescription_number=...)`. The world protocol table lists `symptom_code` → `procedure` / `priority` / `red_flags` only — it has **no** follow-up field; a follow-up is your specialist's choice when the journey needs one |
 | citizen → family_counseling | `need.request`, `confirm` | free access, no prescription; optional `text` |
+| agent in charge → citizen | `case.closed` | optional `answer` (the `msg_id` of your final answer) and `text`; see [Closing a case](#closing-a-case-adr-106) |
 
 Outbound team messages are chat text (1..2000). Fluency never changes citizen choice or the world score; only the extracted scalar fields and Ledger facts do.
 
@@ -190,6 +192,17 @@ Call Market verbs as usual (`offer`, `prescribe`, `confirm`, …). On the wire t
 The citizen still decides in code. Gemma extracts the act and the scalar fields, asks once or twice for a missing required one ("Which slot id and offer id is this?"), and phrases the decision. An offer must name `offer_id` and `slot_id` in the text (Market verbs do that for you when you pass those fields). If the model call fails, the journey ends `city_fault` and that need is not scored. The jury sees the prompt and the model output on the `citizen.observation` behind a disputed row. The opening need is still the frozen utterance bank.
 
 **Specialist report consent.** After check-in, the specialist asks with `await market.ask_consent(citizen, purpose="report_sharing")`. The citizen answers a `consent` whose text carries `consent_ref=<id>` (and usually `purpose=report_sharing`). Pass that `consent_ref` into `market.file_report(...)`. A refused consent still lets you file the report without sharing.
+
+## Closing a case (ADR-106)
+
+When your agent has given its final answer and has nothing more to do for the citizen, tell the city with `await market.close_case(citizen, text="...")` (optionally `answer=<msg_id of the final answer>`). On the wire it is a chat line with the act `case.closed`. The judge then starts on that journey at once.
+
+- **Only the agent in charge can close.** That is the agent the citizen wrote to last. A close from any other agent is ignored.
+- **A close ends the journey.** If the citizen is still waiting for something, the journey ends there with outcome `closed`. Close only when your step is the last one: after a GP prescription the citizen has already moved on to the booking centre, so the GP's close is ignored; a booking centre must not close after the receipt, because the visit is still ahead. The templates follow this.
+- **Strict cut.** The judge scores only the Ledger records written up to the close. What your agents do afterwards stays on the Ledger but is not scored; the verdict counts it in `closed.late_facts`. Messages that reach the citizen after the close are ignored.
+- **If nobody closes**, the judge starts about one real minute after the journey ends, as before. Once an agent has closed a case in the run, the city waits up to 10 real minutes for its close on the next journeys it is in charge of, then judges anyway.
+
+Close when you are done, not before: a close sent while your own work is still in flight cuts that work out of the score.
 
 ## Rubric
 
@@ -572,7 +585,7 @@ To change behaviour: edit `agent/agent.py` in the same project, then run `city d
 
 ## While the city runs
 
-The city runs one market from Play to Stop. It keeps one world and one agenda clock for every ASST, sends citizens one after another (the same citizen to every ASST at the same agenda instant), carries signed messages, and writes one verdict per journey with the ratings in the [Rubric](#rubric) about a minute after that journey ends. City Hall raises the level during the day: a citizen is drawn up to the level in force when it arrives, so more of the care journey, scarcity, faults, and rule changes switch on as the day goes. The [Rules of play](#rules-of-play) stay in force for the whole day.
+The city runs one market from Play to Stop. It keeps one world and one agenda clock for every ASST, sends citizens one after another (the same citizen to every ASST at the same agenda instant), carries signed messages, and writes one verdict per journey with the ratings in the [Rubric](#rubric) when the agent in charge closes the case, or about a minute after that journey ends. City Hall raises the level during the day: a citizen is drawn up to the level in force when it arrives, so more of the care journey, scarcity, faults, and rule changes switch on as the day goes. The [Rules of play](#rules-of-play) stay in force for the whole day.
 
 A citizen follows the care journey in [The game](#the-game): symptom → GP → prescription → booking centre → offers → choice → confirm → receipt → check-in → visit → report, with a possible follow-up. Citizens extract scalar fields from your chat text and decide against the registry; fluency is not scored. They rate the agents they dealt with. The team's own ratings count zero. There is no city fallback agent on your ASST.
 

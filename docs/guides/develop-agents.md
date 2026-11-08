@@ -34,6 +34,10 @@ Templates in this kit under [`templates/`](../../templates/) match what `city in
 
 ## 4. Edit the brain (optional at first)
 
+The templates work as they are: deploy the five of them unchanged and they serve the base care journeys (prescription, booking, check-in, report) and pass conformance. Improve them from there.
+
+When your agent has given its final answer to the citizen, close the case with `await market.close_case(citizen, text="...")`: the judge starts on that journey at once and scores only what happened up to the close. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (the templates close after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+
 Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.market` (stdlib such as `json` and `re` is fine). Speak with `text=` on the same verb that performs the act; the SDK renders team traffic as chat.
 
 Local exercise without deploying:
