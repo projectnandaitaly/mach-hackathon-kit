@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -511,6 +512,17 @@ class DeployService:
         self._audit(audit, deployment.agent_id)
         return deployment.view()
 
+    def _phase(self, deployment: Deployment, step: str, started: float, *, message: str) -> None:
+        _LOG.info(
+            message,
+            extra={
+                "agent_id": deployment.agent_id,
+                "deployment_id": deployment.deployment_id,
+                "step": step,
+                "seconds": round(time.perf_counter() - started, 3),
+            },
+        )
+
     async def _pipeline(
         self,
         deployment: Deployment,
@@ -524,6 +536,7 @@ class DeployService:
             deployment.scan = "clean"
         elif recipe is not None and self.builder is not None:
             deployment.step = "build"
+            started = time.perf_counter()
             try:
                 built = await asyncio.to_thread(
                     self.builder.build,
@@ -542,9 +555,11 @@ class DeployService:
             digest = built.ref
             # The source layer holds team files only; packages come from the certified base.
             deployment.scan = "base-certified"
-            _LOG.info(
-                "agent image pushed",
-                extra={"agent_id": deployment.agent_id, "seconds": round(built.seconds, 3)},
+            self._phase(
+                deployment,
+                "build",
+                started,
+                message="agent image pushed",
             )
         else:
             digest = "sha256:" + hashlib.sha256(dockerfile.encode("utf-8")).hexdigest()
@@ -563,16 +578,17 @@ class DeployService:
         )
         if self.runtime.remote:
             deployment.step = "rollout"
+            started = time.perf_counter()
             try:
                 await self._apply_traffic(deployment, 100 if direct else 1, publish=False)
             except RolloutFailed as exc:
                 self._pod_failed(deployment, exc)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
             except CapError as exc:
-                return self._refuse(
-                    deployment, "ERROR", "rollout failed", exc.message or exc.code
-                )
+                return self._refuse(deployment, "ERROR", "rollout failed", exc.message or exc.code)
+            self._phase(deployment, "rollout", started, message="deploy phase finished")
         deployment.step = "conformance"
+        started = time.perf_counter()
         try:
             report = await self._run_suite(deployment, profile)
         except Exception:
@@ -582,6 +598,7 @@ class DeployService:
             )
             self._stop_unpassed(deployment, direct=direct)
             return self._refuse(deployment, "ERROR", "platform error", "conformance runner error")
+        self._phase(deployment, "conformance", started, message="deploy phase finished")
         outcome = _outcome_of(report)
         if outcome != "PASS":
             self._stop_unpassed(deployment, direct=direct)
@@ -594,16 +611,18 @@ class DeployService:
         prior = self.runtime.serving(deployment.agent_id)
         if deployment.promote:
             deployment.step = "promote"
+            started = time.perf_counter()
             try:
                 if direct:
                     await self._publish(deployment)
                 else:
-                    await self._apply_traffic(deployment, 100)
+                    await self._promote_update(deployment)
             except RolloutFailed as exc:
                 self._pod_failed(deployment, exc)
                 if prior is not None and prior.version != deployment.version:
                     await self._restore(prior)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
+            self._phase(deployment, "promote", started, message="deploy phase finished")
             gap = self._release_gap(deployment)
             if gap is not None:
                 if prior is not None and prior.version != deployment.version:
@@ -1111,6 +1130,27 @@ class DeployService:
         if percent < 100 or not publish:
             return
         await self._publish(deployment)
+
+    async def _promote_update(self, deployment: Deployment) -> None:
+        """Retarget the serving route at the ready candidate; settle the serving host only."""
+
+        digest = deployment.image_digest or "sha256:pending"
+        promote = getattr(self.runtime, "promote_candidate", None)
+        if callable(promote):
+            promote(
+                deployment.agent_id,
+                deployment.version,
+                deployment.card,
+                digest,
+            )
+            self.runtime.egress[deployment.agent_id] = EGRESS
+            self._record_placement(deployment)
+            wait = getattr(self.runtime, "wait_ready", None)
+            if callable(wait):
+                await wait(deployment.agent_id, pods=False)
+            await self._publish(deployment)
+            return
+        await self._apply_traffic(deployment, 100)
 
     async def _register_candidate(self, deployment: Deployment) -> None:
         """Stage the card so relay join can verify the grant. It is not in the catalog."""

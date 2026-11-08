@@ -331,7 +331,7 @@ class GkeRuntime:
         environ: Mapping[str, str] | None = None,
         identity: Callable[[str], Mapping[str, str] | None] | None = None,
         probe: Callable[[str], Awaitable[tuple[int, str | None]]] | None = None,
-        poll_interval: float = 1.0,
+        poll_interval: float = 0.25,
         ready_timeout: float = 300.0,
         route_timeout: float = 240.0,
         route_settle: int = 3,
@@ -364,6 +364,9 @@ class GkeRuntime:
         self.smoked = self._book.smoked
         self._pinned: dict[str, str] = {}
         self._placed: dict[str, tuple[str, str, str]] = {}
+        # Actual Deployment name to scale/keep. After promote_candidate this is the
+        # candidate workload the serving Service selects; otherwise it matches workload_name.
+        self._keep: dict[str, str] = {}
         self._roll_generation: dict[str, int] = {}
         self._suite = suite_signers()
         self._trusted = trusted_keys(self._suite)
@@ -400,6 +403,8 @@ class GkeRuntime:
         slug = dns_name(id_name(agent_id))
         service = slug if percent == 100 else f"{slug}-candidate"
         self._placed[agent_id] = (namespace, service, version)
+        if percent == 100:
+            self._keep[agent_id] = workload_name(service, version)
         replicas = 0 if percent == 0 or agent_id in self.drained else self._replicas(agent_id)
         rows = workloads(
             agent_id=agent_id,
@@ -448,35 +453,68 @@ class GkeRuntime:
             if manifest.get("kind") == "Deployment" and type(applied) is int:
                 self._roll_generation[agent_id] = applied
 
-    async def wait_ready(self, agent_id: str) -> None:
-        """Pods ready, then ``/health`` through the ingress route. Fails fast on known errors."""
+    def promote_candidate(
+        self,
+        agent_id: str,
+        version: str,
+        card: dict[str, Any],
+        image_digest: str,
+    ) -> None:
+        """Point the serving Service at the ready candidate pods. No new Deployment."""
+
+        placed = self._placed.get(agent_id)
+        if placed is None:
+            raise CapError("POLICY_VIOLATION", "candidate")
+        namespace, candidate_service, placed_version = placed
+        if not candidate_service.endswith("-candidate") or placed_version != version:
+            raise CapError("POLICY_VIOLATION", "candidate")
+        if self._cloud and not self._egress:
+            raise CapError("POLICY_VIOLATION", "CITY_EGRESS_CIDRS")
+        self._book.set_traffic(agent_id, version, card, image_digest, 100)
+        slug = dns_name(id_name(agent_id))
+        self._keep[agent_id] = workload_name(candidate_service, version)
+        self._placed[agent_id] = (namespace, slug, version)
+        for manifest in front_door(
+            namespace=namespace,
+            service_name=slug,
+            version=version,
+            ingress_host=self.ingress_host,
+            pod_app=candidate_service,
+        ):
+            self.client.apply(manifest)
+
+    async def wait_ready(self, agent_id: str, *, pods: bool = True) -> None:
+        """Pods ready (unless ``pods`` is false), then ``/health`` through the ingress route."""
 
         read = getattr(self.client, "get", None)
         placed = self._placed.get(agent_id)
         if not callable(read) or placed is None:
             return
         namespace, service, version = placed
-        name = workload_name(service, version)
-        path = f"/apis/apps/v1/namespaces/{namespace}/deployments/{name}"
-        deadline = time.monotonic() + self._ready_timeout
-        while True:
-            found = await asyncio.to_thread(read, path)
-            if found is not None and _wanted(found) == 0:
-                return
-            if _roll_caught_up(found, self._roll_generation.get(agent_id)):
-                break
-            pods = await asyncio.to_thread(
-                read, f"/api/v1/namespaces/{namespace}/pods", {"labelSelector": f"app={service}"}
-            )
-            problem = _pod_problem(pods, name)
-            if problem is not None:
-                outcome, detail, pod = problem
-                if outcome == "FAIL":
-                    detail += await self._log_tail(namespace, pod)
-                raise RolloutFailed(outcome, detail[:_DETAIL_MAX])
-            if time.monotonic() >= deadline:
-                raise RolloutFailed("ERROR", "agent pods did not become ready in time")
-            await asyncio.sleep(self._poll)
+        name = self._keep.get(agent_id) or workload_name(service, version)
+        if pods:
+            path = f"/apis/apps/v1/namespaces/{namespace}/deployments/{name}"
+            deadline = time.monotonic() + self._ready_timeout
+            while True:
+                found = await asyncio.to_thread(read, path)
+                if found is not None and _wanted(found) == 0:
+                    return
+                if _roll_caught_up(found, self._roll_generation.get(agent_id)):
+                    break
+                pods_list = await asyncio.to_thread(
+                    read,
+                    f"/api/v1/namespaces/{namespace}/pods",
+                    {"labelSelector": f"app={service}"},
+                )
+                problem = _pod_problem(pods_list, name)
+                if problem is not None:
+                    outcome, detail, pod = problem
+                    if outcome == "FAIL":
+                        detail += await self._log_tail(namespace, pod)
+                    raise RolloutFailed(outcome, detail[:_DETAIL_MAX])
+                if time.monotonic() >= deadline:
+                    raise RolloutFailed("ERROR", "agent pods did not become ready in time")
+                await asyncio.sleep(self._poll)
         url = self.candidate_url(agent_id) + "/health"
         deadline = time.monotonic() + self._route_timeout
         # The load balancer's proxies take a new route one by one, and for a while they can
@@ -506,7 +544,7 @@ class GkeRuntime:
         if not callable(read) or placed is None:
             return []
         namespace, service, version = placed
-        keep = workload_name(service, version)
+        keep = self._keep.get(agent_id) or workload_name(service, version)
         slug = dns_name(id_name(agent_id))
         apps = {slug, dns_name(f"{slug}-candidate")}
         listed = await asyncio.to_thread(read, f"/apis/apps/v1/namespaces/{namespace}/deployments")
@@ -602,6 +640,7 @@ class GkeRuntime:
         namespace = namespace_for(str(serving.card.get("team", "team:unknown")))
         slug = dns_name(id_name(agent_id))
         self._placed[agent_id] = (namespace, slug, serving.version)
+        self._keep[agent_id] = slug
 
     def apply_scale(self, agent_id: str) -> None:
         placed = self._placed.get(agent_id)
@@ -612,7 +651,10 @@ class GkeRuntime:
             {
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
-                "metadata": {"name": workload_name(service, version), "namespace": namespace},
+                "metadata": {
+                    "name": self._keep.get(agent_id) or workload_name(service, version),
+                    "namespace": namespace,
+                },
                 "spec": {"replicas": self._replicas(agent_id)},
             }
         )
@@ -624,6 +666,7 @@ class GkeRuntime:
         if placed is None:
             return
         namespace, service, version = placed
+        # Placed, not _keep: a failed candidate must not delete the live release.
         manifest = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
@@ -646,6 +689,7 @@ class GkeRuntime:
         for agent_id, placed in list(self._placed.items()):
             if placed[0] == namespace:
                 del self._placed[agent_id]
+                self._keep.pop(agent_id, None)
         delete = getattr(self.client, "delete", None)
         if not callable(delete):
             raise CapError("POLICY_VIOLATION", "gke delete")
@@ -660,7 +704,10 @@ class GkeRuntime:
             {
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
-                "metadata": {"name": workload_name(service, version), "namespace": namespace},
+                "metadata": {
+                    "name": workload_name(service, version),
+                    "namespace": namespace,
+                },
                 "spec": {"replicas": 0},
             }
         )
@@ -695,6 +742,7 @@ class GkeRuntime:
                     }
                 )
         self._placed.pop(agent_id, None)
+        self._keep.pop(agent_id, None)
 
     def _replicas(self, agent_id: str) -> int:
         scale = self.scales.get(agent_id)
@@ -922,22 +970,6 @@ def workloads(
             },
         },
     }
-    service = {
-        "apiVersion": "v1",
-        "kind": "Service",
-        "metadata": {
-            "name": service_name,
-            "namespace": namespace,
-            "annotations": {"cloud.google.com/neg": '{"ingress": true}'},
-        },
-        "spec": {
-            "type": "ClusterIP",
-            # version keeps the previous Deployment out of this Service. Both
-            # reads of the card must hit the same process.
-            "selector": {"app": service_name, "version": version},
-            "ports": [{"port": AGENT_CONTAINER_PORT, "targetPort": AGENT_CONTAINER_PORT}],
-        },
-    }
     city_system = {
         "apiVersion": "v1",
         "kind": "Namespace",
@@ -968,6 +1000,50 @@ def workloads(
                     "allowedRoutes": {"namespaces": {"from": "All"}},
                 }
             ],
+        },
+    }
+    return [
+        city_system,
+        namespace_manifest,
+        account,
+        deny,
+        allow,
+        deploy,
+        gateway,
+        *front_door(
+            namespace=namespace,
+            service_name=service_name,
+            version=version,
+            ingress_host=ingress_host,
+        ),
+    ]
+
+
+def front_door(
+    *,
+    namespace: str,
+    service_name: str,
+    version: str,
+    ingress_host: str = INGRESS_HOST,
+    pod_app: str | None = None,
+) -> list[dict[str, Any]]:
+    """Serving Service + HTTPRoute + HealthCheck. ``pod_app`` retargets at candidate pods."""
+
+    app = pod_app if pod_app is not None else service_name
+    service = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": service_name,
+            "namespace": namespace,
+            "annotations": {"cloud.google.com/neg": '{"ingress": true}'},
+        },
+        "spec": {
+            "type": "ClusterIP",
+            # version keeps the previous Deployment out of this Service. Both
+            # reads of the card must hit the same process.
+            "selector": {"app": app, "version": version},
+            "ports": [{"port": AGENT_CONTAINER_PORT, "targetPort": AGENT_CONTAINER_PORT}],
         },
     }
     route = {
@@ -1007,7 +1083,7 @@ def workloads(
         "metadata": {"name": service_name, "namespace": namespace},
         "spec": {
             "default": {
-                "checkIntervalSec": 5,
+                "checkIntervalSec": 1,
                 "timeoutSec": 2,
                 "healthyThreshold": 1,
                 "unhealthyThreshold": 2,
@@ -1019,18 +1095,7 @@ def workloads(
             "targetRef": {"group": "", "kind": "Service", "name": service_name},
         },
     }
-    return [
-        city_system,
-        namespace_manifest,
-        account,
-        deny,
-        allow,
-        deploy,
-        service,
-        gateway,
-        route,
-        health,
-    ]
+    return [service, route, health]
 
 
 def warm_pool(image: str, replicas: int) -> list[dict[str, Any]]:
