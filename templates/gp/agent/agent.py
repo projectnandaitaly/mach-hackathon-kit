@@ -4,9 +4,10 @@ Works as-is for the base journeys: a symptom gets the prescription from the prot
 flag is escalated, an expired prescription is renewed (rule P1). Edit freely; keep the Market calls.
 """
 
+import hashlib
+
 from city_sdk.market import Market, Message, Need, OutOfScope, clinical, understood
 
-CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
 # Plain-language words a citizen may use instead of a symptom code.
 KEYWORDS = {
     "SYM-BACK": ("mal di schiena", "back pain"),
@@ -101,7 +102,6 @@ async def renew(market: Market, message: Message, prescription_number: str) -> N
 def number_for(message: Message, suffix: str = "") -> str:
     """A prescription number derived from the citizen and the journey, so a replay matches."""
 
-    who = message.sender.split(":", 1)[-1]
-    raw = f"{who}-{message.need_id or message.msg_id}".upper()
-    core = "".join(char for char in raw if char in CHARS)[:34]
+    raw = f"{message.sender}|{message.need_id or message.msg_id}"
+    core = hashlib.sha256(raw.encode()).hexdigest().upper()[:32]
     return "prescription_number-" + core + (f"-{suffix}" if suffix else "")

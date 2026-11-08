@@ -5,6 +5,7 @@ commits a confirmed slot, records the check-in. The visit is the last step of th
 the check-in the agent closes the case (``case.closed``) and the judge starts at once.
 """
 
+import hashlib
 import json
 from datetime import timedelta
 
@@ -14,7 +15,6 @@ FAMILY = "hospital"
 OUTCOME = "VISITA-OK"
 MAX_OFFERS = 5
 DEADLINE_DAYS = {"B": 2, "D": 5}
-CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
 
 
 async def main(need: Need, market: Market) -> None:
@@ -326,9 +326,8 @@ def slot_by_id(world, slot_id: str):
 
 
 def number_for(message: Message, suffix: str) -> str:
-    who = message.sender.split(":", 1)[-1]
-    raw = f"{who}-{message.need_id or message.msg_id}".upper()
-    core = "".join(char for char in raw if char in CHARS)[:34]
+    raw = f"{message.sender}|{message.need_id or message.msg_id}"
+    core = hashlib.sha256(raw.encode()).hexdigest().upper()[:32]
     return f"prescription_number-{core}-{suffix}"
 
 
