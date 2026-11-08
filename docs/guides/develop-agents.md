@@ -34,7 +34,7 @@ Templates in this kit under [`templates/`](../../templates/) match what `city in
 
 ## 4. Edit the brain (optional at first)
 
-Change only `<agent>/agent/agent.py`. Import `city_sdk.market`. Speak with `text=` on the same verb that performs the structured act.
+Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.market` (stdlib such as `json` and `re` is fine). Speak with `text=` on the same verb that performs the act; the SDK renders team traffic as chat.
 
 Local exercise without deploying:
 
@@ -57,7 +57,7 @@ city status
 
 Expect `released` / `visible`. Conformance is the gate inside `city deploy`: the city runs the suite against the candidate and promotes it only on PASS. The first release runs the full suite; a later release of an agent that is already serving runs the fast suite.
 
-The templates keep these four behaviours as optional guidance. They are **not** promote requirements ([ADR-088](../adr/ADR-088.md)):
+The templates keep these four behaviours as optional guidance. They are **not** promote requirements (ADR-088):
 
 - `raise OutOfScope()` when `clinical(need.summary)` is true, and do not send or remember that text
 - on `need.is_emergency`, `await market.escalate(reason="red_flag")` and return without sending

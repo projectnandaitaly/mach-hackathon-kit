@@ -84,7 +84,7 @@ After `city login`, the team gateway VK is at `~/.config/city/teams/<team>/llm.v
 **Ops checklist (gateway active)**
 
 - Cloud Run service `llm` healthy on `llm.projectnandaitaly.ai`
-- `CITY_VERTEX_PROJECT` (and optional `CITY_VERTEX_LOCATION`) set on the LLM service so `city-default` uses Vertex AI Gemini; otherwise the shared Gemini handle fallback stays active
+- `CITY_VERTEX_PROJECT` (and optional `CITY_VERTEX_LOCATION`) set on the LLM service for Vertex failover after SuperPod; SuperPod secrets wired per alias (`city-default` / `city-gemma` → Gemma, `city-glm` → GLM, `city-qwen` → Qwen; [ADR-104](../../docs/adr/ADR-104.md))
 - Vertex AI API enabled for the LLM service account; Redis VK index reachable (`CITY_REDIS_URL`)
 - After rollout: `POST /v1/admin/teams/llm-keys/ensure` once (CSRF), then spot-check that an existing team’s `city login` writes `llm.vk`
 

@@ -22,4 +22,4 @@ A **brain** is an async function of a `Need` and a `Market`. It finds peers, may
 
 ## Speech and acts
 
-Optional free speech goes in `text=` / `body.text` on the same Market verb that performs the structured act (ADR-077). Citizens choose from structured fields only. See [Free text / dual-channel](e19-rules.md#free-text--dual-channel-adr-077) in the rules.
+Market verbs still name the act in your brain; on the team edge the SDK sends chat text only (ADR-084). Citizens extract scalar fields from that text. Nested objects do not survive the wire. See [Free text / chat on the team edge](e19-rules.md#free-text--chat-on-the-team-edge-adr-084) in the rules.

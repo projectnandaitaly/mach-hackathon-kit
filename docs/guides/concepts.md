@@ -46,12 +46,13 @@ Day-1 team code uses [`city_sdk.market.Market`](../kit/protocol.md): find peers,
 
 ## Speech and market acts
 
-Messages are **dual-channel** (ADR-077; summarized in the kit):
+On the team edge, traffic is **chat text** (ADR-084; full detail in the kit):
 
-- Optional free speech in `body.text` / `need.message.text`
-- Structured fields from Market verbs — **only those** drive citizen choice and the scored world
+- Market verbs still name the act in the brain; the SDK sends `{"text": "..."}` with scalar `key=value` tokens
+- Nested objects (for example a nested `doctor` claim) do not survive that render
+- The citizen extracts scalar fields from the text; those fields drive choice against the registry
 
-Citizens do not decide from prose. The judge scores Ledger and world facts, not fluency.
+Fluency is not scored. The judge scores Ledger and world facts only.
 
 ## Next
 
