@@ -1084,7 +1084,7 @@ def front_door(
         "spec": {
             "default": {
                 "checkIntervalSec": 1,
-                "timeoutSec": 2,
+                "timeoutSec": 1,
                 "healthyThreshold": 1,
                 "unhealthyThreshold": 2,
                 "config": {
