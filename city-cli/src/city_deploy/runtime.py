@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import threading
@@ -69,6 +70,15 @@ _IMAGE_ERRORS = frozenset(
 )
 _START_ERRORS = frozenset({"CreateContainerConfigError", "CreateContainerError"})
 _LOG_TAIL = 20
+_LOG = logging.getLogger(__name__)
+# Route objects first: the gateway detaches the NEGs before the namespace goes, so the
+# NEG finalizer can finish instead of holding the namespace in Terminating.
+_FRONT_DOOR_KINDS = (
+    ("gateway.networking.k8s.io/v1", "HTTPRoute"),
+    ("networking.gke.io/v1", "HealthCheckPolicy"),
+    ("v1", "Service"),
+)
+_NEG_LIST = "/apis/networking.gke.io/v1beta1/namespaces/{namespace}/servicenetworkendpointgroups"
 _DETAIL_MAX = 2000
 
 
@@ -336,6 +346,9 @@ class GkeRuntime:
         ready_timeout: float = 300.0,
         route_timeout: float = 240.0,
         route_settle: int = 3,
+        cleanup_poll: float = 2.0,
+        neg_timeout: float = 45.0,
+        terminating_timeout: float = 180.0,
     ) -> None:
         self.name = "gke"
         self.remote = True
@@ -349,6 +362,9 @@ class GkeRuntime:
         self._ready_timeout = ready_timeout
         self._route_timeout = route_timeout
         self._route_settle = route_settle
+        self._cleanup_poll = cleanup_poll
+        self._neg_timeout = neg_timeout
+        self._terminating_timeout = terminating_timeout
         source = os.environ if environ is None else environ
         self._cloud = source.get("CITY_ENV") == "cloud"
         self._warm = _warm_rows(source)
@@ -395,6 +411,7 @@ class GkeRuntime:
         image_digest: str,
         percent: int,
     ) -> None:
+        self._await_namespace(namespace_for(str(card.get("team", "team:unknown"))))
         with self.book_lock:
             self._book.set_traffic(agent_id, version, card, image_digest, percent)
         if self._cloud and not self._egress:
@@ -769,7 +786,74 @@ class GkeRuntime:
         delete = getattr(self.client, "delete", None)
         if not callable(delete):
             raise CapError("POLICY_VIOLATION", "gke delete")
+        self._remove_front_doors(namespace, delete)
+        self._await_negs_gone(namespace)
         delete({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": namespace}})
+
+    def _remove_front_doors(
+        self, namespace: str, delete: Callable[[Mapping[str, Any]], None]
+    ) -> None:
+        read = getattr(self.client, "get", None)
+        if not callable(read):
+            return
+        for api, kind in _FRONT_DOOR_KINDS:
+            shape = {"apiVersion": api, "kind": kind, "metadata": {"namespace": namespace}}
+            try:
+                listed = read(_resource_path(shape))
+            except CapError:
+                _LOG.warning("purge could not list %s", kind, extra={"namespace": namespace})
+                continue
+            items = listed.get("items") if isinstance(listed, Mapping) else None
+            for item in items if isinstance(items, list) else []:
+                name = str((item.get("metadata") or {}).get("name", ""))
+                if name:
+                    delete({**shape, "metadata": {"name": name, "namespace": namespace}})
+
+    def _await_negs_gone(self, namespace: str) -> None:
+        """Best effort, bounded: a NEG still listed after the wait does not stop the purge."""
+
+        read = getattr(self.client, "get", None)
+        if not callable(read):
+            return
+        deadline = time.monotonic() + self._neg_timeout
+        while True:
+            try:
+                listed = read(_NEG_LIST.format(namespace=namespace))
+            except CapError:
+                return
+            items = listed.get("items") if isinstance(listed, Mapping) else None
+            if not items:
+                return
+            if time.monotonic() >= deadline:
+                _LOG.warning(
+                    "purge deletes the namespace with NEGs still listed",
+                    extra={"namespace": namespace, "negs": len(items)},
+                )
+                return
+            time.sleep(self._cleanup_poll)
+
+    def _await_namespace(self, namespace: str) -> None:
+        """Wait out a namespace that a purge or delete is still removing."""
+
+        read = getattr(self.client, "get", None)
+        if not callable(read):
+            return
+        deadline = time.monotonic() + self._terminating_timeout
+        while True:
+            try:
+                found = read(f"/api/v1/namespaces/{namespace}")
+            except CapError:
+                return
+            status = found.get("status") if isinstance(found, Mapping) else None
+            if not isinstance(status, Mapping) or status.get("phase") != "Terminating":
+                return
+            if time.monotonic() >= deadline:
+                raise CapError(
+                    "POLICY_VIOLATION",
+                    f"cleanup in progress: namespace {namespace} is still being deleted; "
+                    "run city deploy again in a few minutes",
+                )
+            time.sleep(self._cleanup_poll)
 
     def quiesce(self, agent_id: str) -> None:
         placed = self._placed.get(agent_id)
