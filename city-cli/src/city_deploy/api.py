@@ -27,8 +27,8 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
         response = await call_next(request)
         # The CLI polls deployments every half second; a poll changes nothing.
         poll = request.method == "GET" and request.url.path.startswith("/deployments/")
-        if service.state is not None and not poll and response.status_code < 500:
-            service.state.checkpoint(service.snapshot())
+        if not poll and response.status_code < 500:
+            await service.checkpoint()
         return response
 
     @app.exception_handler(CapError)

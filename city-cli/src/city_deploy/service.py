@@ -11,11 +11,13 @@ import logging
 import os
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from secrets import token_hex, token_urlsafe
-from typing import Any, Protocol, cast
+from typing import Any, ParamSpec, Protocol, TypeVar, cast
 from uuid import uuid4
 
 import httpx
@@ -59,6 +61,8 @@ from city_deploy.state import StateSink
 from city_deploy.team_llm import MemoryTeamKeys, TeamKeysPort
 from city_deploy.teams import OpenTeamDirectory, TeamDirectory
 
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 _AGENT = re.compile(r"^agent:[a-z0-9_-]+(?:/[a-z0-9_-]+)?$")
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 _TEAM = re.compile(r"^team:[a-z0-9_-]+$")
@@ -226,9 +230,37 @@ class DeployService:
         self.market_locked: Callable[[], bool] | None = None
         self._purged: dict[str, list[str]] = {}
         self.agent_ids = AgentIds()
+        # One writer keeps checkpoints in order: an older snapshot never lands last.
+        self._checkpoints = ThreadPoolExecutor(max_workers=1, thread_name_prefix="checkpoint")
 
     def now(self) -> datetime:
         return self.clock.now()
+
+    async def _offload(self, call: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """Run a cluster or Secret Manager call on a worker thread when the runtime is remote."""
+
+        if not self.runtime.remote:
+            return call(*args, **kwargs)
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    @contextmanager
+    def _book_held(self) -> Iterator[None]:
+        lock = getattr(self.runtime, "book_lock", None)
+        if lock is None:
+            yield
+            return
+        with lock:
+            yield
+
+    async def checkpoint(self) -> None:
+        """Write the snapshot off the event loop. No-op without a state sink."""
+
+        if self.state is None:
+            return
+        body = self.snapshot()
+        await asyncio.get_running_loop().run_in_executor(
+            self._checkpoints, self.state.checkpoint, body
+        )
 
     def _team_llm_key(self, team_id: str) -> str | None:
         """The team's Gateway key for its pods. Do not log the result."""
@@ -498,8 +530,7 @@ class DeployService:
             _LOG.exception("deploy pipeline crashed", extra={"agent_id": deployment.agent_id})
             self._refuse(deployment, "ERROR", "platform error", "deploy pipeline error")
         finally:
-            if self.state is not None:
-                self.state.checkpoint(self.snapshot())
+            await self.checkpoint()
 
     def _refuse(
         self, deployment: Deployment, outcome: str, audit: str, detail: str
@@ -579,7 +610,7 @@ class DeployService:
             try:
                 await self._apply_traffic(deployment, 1, publish=False)
             except RolloutFailed as exc:
-                self._pod_failed(deployment, exc)
+                await self._pod_failed(deployment, exc)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
             except CapError as exc:
                 return self._refuse(deployment, "ERROR", "rollout failed", exc.message or exc.code)
@@ -593,12 +624,12 @@ class DeployService:
                 "conformance runner failed",
                 extra={"agent_id": deployment.agent_id, "version": deployment.version},
             )
-            self._stop_unpassed(deployment, direct=first_release)
+            await self._stop_unpassed(deployment, direct=first_release)
             return self._refuse(deployment, "ERROR", "platform error", "conformance runner error")
         self._phase(deployment, "conformance", started, message="deploy phase finished")
         outcome = _outcome_of(report)
         if outcome != "PASS":
-            self._stop_unpassed(deployment, direct=first_release)
+            await self._stop_unpassed(deployment, direct=first_release)
             return self._refuse(
                 deployment,
                 outcome,
@@ -612,7 +643,7 @@ class DeployService:
             try:
                 await self._promote_update(deployment)
             except RolloutFailed as exc:
-                self._pod_failed(deployment, exc)
+                await self._pod_failed(deployment, exc)
                 if prior is not None and prior.version != deployment.version:
                     await self._restore(prior)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
@@ -622,7 +653,7 @@ class DeployService:
                 if prior is not None and prior.version != deployment.version:
                     await self._restore(prior)
                 else:
-                    self._withdraw(deployment, delete=True)
+                    await self._withdraw(deployment, delete=True)
                 return self._refuse(deployment, "ERROR", "release incomplete", gap)
             deployment.status = "promoted"
         else:
@@ -706,16 +737,16 @@ class DeployService:
         await self.index.delete_agent(agent_id, role_header="deploy", cause="delete")
         drop = getattr(self.teams, "drop_agent", None)
         if callable(drop) and owner is not None:
-            drop(agent_id, team_id=owner)
+            await self._offload(drop, agent_id, team_id=owner)
         remove = getattr(self.runtime, "remove_agent", None)
         if callable(remove):
-            remove(agent_id)
+            await self._offload(remove, agent_id)
         self.runtime.revisions.pop(agent_id, None)
         self.runtime.scales.pop(agent_id, None)
         self.runtime.drained.discard(agent_id)
         self.runtime.smoked.discard(agent_id)
         names = self.secret_names.pop(agent_id, set())
-        self.secrets.forget_agent(agent_id, names)
+        await self._offload(self.secrets.forget_agent, agent_id, names)
         self.deployments = {
             key: item for key, item in self.deployments.items() if item.agent_id != agent_id
         }
@@ -742,7 +773,7 @@ class DeployService:
             owned = list(self._purged.get(team_id, []))
         sessions = [token for token, item in self.sessions.items() if item.team_id == team_id]
         secrets = sum(len({*FIXED_SECRETS, *self.secret_names.get(a, ())}) for a in owned)
-        team_key = self.team_keys.read_team(team_id) is not None
+        team_key = await self._offload(self.team_keys.read_team, team_id) is not None
         if not dry_run:
             self._refuse_live_wave()
             self._purged[team_id] = list(owned)
@@ -755,10 +786,11 @@ class DeployService:
         if not dry_run:
             remove_namespace = getattr(self.runtime, "remove_namespace", None)
             if callable(remove_namespace):
-                remove_namespace(namespace)
+                await self._offload(remove_namespace, namespace)
             for agent_id in owned:
-                self.secrets.forget_agent(agent_id, self.secret_names.pop(agent_id, set()))
-            team_key = self.team_keys.revoke_team(team_id)
+                names = self.secret_names.pop(agent_id, set())
+                await self._offload(self.secrets.forget_agent, agent_id, names)
+            team_key = await self._offload(self.team_keys.revoke_team, team_id)
             for token in sessions:
                 del self.sessions[token]
             for code, challenge in list(self._devices.items()):
@@ -1158,7 +1190,8 @@ class DeployService:
         # Register before the pod starts; stay off the public query until PASS.
         await self._register_candidate(deployment)
         digest = deployment.image_digest or "sha256:pending"
-        self.runtime.set_traffic(
+        await self._offload(
+            self.runtime.set_traffic,
             deployment.agent_id,
             deployment.version,
             deployment.card,
@@ -1166,7 +1199,7 @@ class DeployService:
             percent,
         )
         self.runtime.egress[deployment.agent_id] = EGRESS
-        self.secrets.issue_llm(deployment.agent_id)
+        await self._offload(self.secrets.issue_llm, deployment.agent_id)
         self._record_placement(deployment)
         wait = getattr(self.runtime, "wait_ready", None)
         if callable(wait):
@@ -1181,7 +1214,8 @@ class DeployService:
         digest = deployment.image_digest or "sha256:pending"
         promote = getattr(self.runtime, "promote_candidate", None)
         if callable(promote):
-            promote(
+            await self._offload(
+                promote,
                 deployment.agent_id,
                 deployment.version,
                 deployment.card,
@@ -1254,16 +1288,16 @@ class DeployService:
             return f"serving {serving.version}, expected {deployment.version}"
         return None
 
-    def _pod_failed(self, deployment: Deployment, exc: RolloutFailed) -> None:
+    async def _pod_failed(self, deployment: Deployment, exc: RolloutFailed) -> None:
         """The pod started and then failed. Keep the exception, then delete the workload."""
 
         _LOG.error(
             "agent pod failed after start",
             extra={"agent_id": deployment.agent_id, "detail": exc.detail},
         )
-        self._withdraw(deployment, delete=True)
+        await self._withdraw(deployment, delete=True)
 
-    def _withdraw(self, deployment: Deployment, *, delete: bool = False) -> None:
+    async def _withdraw(self, deployment: Deployment, *, delete: bool = False) -> None:
         """Undo a placement: no traffic, not certified, then stop or delete its pods."""
 
         for row in self.runtime.revisions.get(deployment.agent_id, []):
@@ -1274,7 +1308,7 @@ class DeployService:
             remove = getattr(self.runtime, "remove", None)
             if callable(remove):
                 try:
-                    remove(deployment.agent_id)
+                    await self._offload(remove, deployment.agent_id)
                 except CapError:
                     _LOG.exception(
                         "failed to remove crashed agent",
@@ -1283,7 +1317,7 @@ class DeployService:
                 return
         quiesce = getattr(self.runtime, "quiesce", None)
         if callable(quiesce):
-            quiesce(deployment.agent_id)
+            await self._offload(quiesce, deployment.agent_id)
 
     def _record_placement(self, deployment: Deployment) -> None:
         locate = getattr(self.runtime, "candidate_url", None)
@@ -1301,7 +1335,8 @@ class DeployService:
 
     async def _restore(self, revision: Revision) -> None:
         agent_id = str(revision.card["agent_id"])
-        self.runtime.set_traffic(
+        await self._offload(
+            self.runtime.set_traffic,
             agent_id,
             revision.version,
             revision.card,
@@ -1328,21 +1363,21 @@ class DeployService:
                 extra={"agent_id": agent_id, "deployments": names},
             )
 
-    def _stop_unpassed(self, deployment: Deployment, *, direct: bool) -> None:
+    async def _stop_unpassed(self, deployment: Deployment, *, direct: bool) -> None:
         """A placement that did not pass stops; scale and quiesce point back at the release."""
 
         if not self.runtime.remote:
             return
         if direct:
-            self._withdraw(deployment, delete=True)
+            await self._withdraw(deployment, delete=True)
             return
         rows = self.runtime.revisions.get(deployment.agent_id, [])
         if any(row.version == deployment.version and row.traffic == 100 for row in rows):
             return
-        self._withdraw(deployment, delete=True)
+        await self._withdraw(deployment, delete=True)
         adopt = getattr(self.runtime, "adopt", None)
         if callable(adopt):
-            adopt(deployment.agent_id)
+            await self._offload(adopt, deployment.agent_id)
 
     def _rollback_target(self, agent_id: str, version: str | None) -> Revision | None:
         rows = [
@@ -1366,6 +1401,10 @@ class DeployService:
             raise
 
     def snapshot(self) -> dict[str, object]:
+        with self._book_held():
+            return self._snapshot()
+
+    def _snapshot(self) -> dict[str, object]:
         return {
             "deployments": {
                 dep_id: _deployment_blob(dep) for dep_id, dep in self.deployments.items()

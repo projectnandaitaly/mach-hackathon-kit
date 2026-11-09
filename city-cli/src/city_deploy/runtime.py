@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import re
+import threading
 import time
 import urllib.request
 import uuid
@@ -368,6 +369,8 @@ class GkeRuntime:
         # candidate workload the serving Service selects; otherwise it matches workload_name.
         self._keep: dict[str, str] = {}
         self._roll_generation: dict[str, int] = {}
+        # Deploy calls this runtime from worker threads and reads the book on its event loop.
+        self.book_lock = threading.RLock()
         self._suite = suite_signers()
         self._trusted = trusted_keys(self._suite)
 
@@ -392,7 +395,8 @@ class GkeRuntime:
         image_digest: str,
         percent: int,
     ) -> None:
-        self._book.set_traffic(agent_id, version, card, image_digest, percent)
+        with self.book_lock:
+            self._book.set_traffic(agent_id, version, card, image_digest, percent)
         if self._cloud and not self._egress:
             raise CapError("POLICY_VIOLATION", "CITY_EGRESS_CIDRS")
         image = pin_image(self.repository, image_digest)
@@ -402,11 +406,12 @@ class GkeRuntime:
         namespace = namespace_for(str(card.get("team", "team:unknown")))
         slug = dns_name(id_name(agent_id))
         service = slug if percent == 100 else f"{slug}-candidate"
-        self._placed[agent_id] = (namespace, service, version)
-        # Always the Deployment this placement applies: a candidate waits on its own pods,
-        # never on the serving Deployment of the previous release.
-        self._keep[agent_id] = workload_name(service, version)
-        replicas = 0 if percent == 0 or agent_id in self.drained else self._replicas(agent_id)
+        with self.book_lock:
+            self._placed[agent_id] = (namespace, service, version)
+            # Always the Deployment this placement applies: a candidate waits on its own pods,
+            # never on the serving Deployment of the previous release.
+            self._keep[agent_id] = workload_name(service, version)
+            replicas = 0 if percent == 0 or agent_id in self.drained else self._replicas(agent_id)
         rows = workloads(
             agent_id=agent_id,
             version=version,
@@ -452,7 +457,8 @@ class GkeRuntime:
                     _stamp_placement(manifest)
             applied = self.client.apply(manifest)
             if manifest.get("kind") == "Deployment" and type(applied) is int:
-                self._roll_generation[agent_id] = applied
+                with self.book_lock:
+                    self._roll_generation[agent_id] = applied
 
     def promote_candidate(
         self,
@@ -471,10 +477,11 @@ class GkeRuntime:
             raise CapError("POLICY_VIOLATION", "candidate")
         if self._cloud and not self._egress:
             raise CapError("POLICY_VIOLATION", "CITY_EGRESS_CIDRS")
-        self._book.set_traffic(agent_id, version, card, image_digest, 100)
         slug = dns_name(id_name(agent_id))
-        self._keep[agent_id] = workload_name(candidate_service, version)
-        self._placed[agent_id] = (namespace, slug, version)
+        with self.book_lock:
+            self._book.set_traffic(agent_id, version, card, image_digest, 100)
+            self._keep[agent_id] = workload_name(candidate_service, version)
+            self._placed[agent_id] = (namespace, slug, version)
         for manifest in front_door(
             namespace=namespace,
             service_name=slug,
@@ -640,8 +647,10 @@ class GkeRuntime:
             return
         namespace = namespace_for(str(serving.card.get("team", "team:unknown")))
         slug = dns_name(id_name(agent_id))
-        self._placed[agent_id] = (namespace, slug, serving.version)
-        self._keep[agent_id] = self._serving_deployment(namespace, slug, serving.version)
+        keep = self._serving_deployment(namespace, slug, serving.version)
+        with self.book_lock:
+            self._placed[agent_id] = (namespace, slug, serving.version)
+            self._keep[agent_id] = keep
 
     def _serving_deployment(self, namespace: str, slug: str, version: str) -> str:
         """The Deployment whose pods serve ``version``.
@@ -714,10 +723,11 @@ class GkeRuntime:
 
         if not namespace.startswith("team-"):
             raise CapError("POLICY_VIOLATION", "namespace")
-        for agent_id, placed in list(self._placed.items()):
-            if placed[0] == namespace:
-                del self._placed[agent_id]
-                self._keep.pop(agent_id, None)
+        with self.book_lock:
+            for agent_id, placed in list(self._placed.items()):
+                if placed[0] == namespace:
+                    del self._placed[agent_id]
+                    self._keep.pop(agent_id, None)
         delete = getattr(self.client, "delete", None)
         if not callable(delete):
             raise CapError("POLICY_VIOLATION", "gke delete")
@@ -769,8 +779,9 @@ class GkeRuntime:
                         "metadata": {"name": name, "namespace": namespace},
                     }
                 )
-        self._placed.pop(agent_id, None)
-        self._keep.pop(agent_id, None)
+        with self.book_lock:
+            self._placed.pop(agent_id, None)
+            self._keep.pop(agent_id, None)
 
     def _replicas(self, agent_id: str) -> int:
         scale = self.scales.get(agent_id)
