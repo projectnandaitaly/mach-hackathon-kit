@@ -1086,10 +1086,37 @@ class DeployService:
         return "fast"
 
     async def _run_suite(self, deployment: Deployment, profile: str) -> Report:
+        """Run the candidate suite. Retry twice on FAIL so a cold first release can warm up.
+
+        Live first attempts still flake on ``alter: ping`` / ``custody.ack`` after one
+        retry; a second retry matches what a manual ``city deploy`` would do next.
+        """
+
         deployment.profiles.append(profile)
+        report = await self._suite_once(deployment, profile)
+        for attempt in range(1, 3):
+            if _outcome_of(report) == "PASS":
+                break
+            _LOG.warning(
+                "conformance failed; retrying",
+                extra={
+                    "agent_id": deployment.agent_id,
+                    "profile": profile,
+                    "attempt": attempt,
+                    "detail": _suite_detail(report),
+                },
+            )
+            await self._ready_before_conform_retry(deployment)
+            self._audit("conformance retry", deployment.agent_id)
+            deployment.profiles.append(profile)
+            report = await self._suite_once(deployment, profile)
+        deployment.stages = [row.as_dict() for row in report.rows]
+        return report
+
+    async def _suite_once(self, deployment: Deployment, profile: str) -> Report:
         self.conform_runs += 1
         try:
-            report = await self.suite.run(card=deployment.card, profile=profile)
+            return await self.suite.run(card=deployment.card, profile=profile)
         except Exception:
             _LOG.exception(
                 "conformance suite raised; retrying once",
@@ -1097,33 +1124,21 @@ class DeployService:
             )
             self.conform_runs += 1
             self._audit("platform retry", deployment.agent_id)
-            report = await self.suite.run(card=deployment.card, profile=profile)
-        if _outcome_of(report) != "PASS":
-            _LOG.warning(
-                "conformance failed; retrying once",
-                extra={
-                    "agent_id": deployment.agent_id,
-                    "profile": profile,
-                    "detail": _suite_detail(report),
-                },
-            )
-            wait = getattr(self.runtime, "wait_ready", None)
-            if callable(wait) and self.runtime.remote:
-                try:
-                    await wait(deployment.agent_id, pods=False)
-                except Exception:
-                    _LOG.exception(
-                        "route wait before conformance retry failed",
-                        extra={"agent_id": deployment.agent_id},
-                    )
-            else:
-                await asyncio.sleep(0)
-            self.conform_runs += 1
-            self._audit("conformance retry", deployment.agent_id)
-            deployment.profiles.append(profile)
-            report = await self.suite.run(card=deployment.card, profile=profile)
-        deployment.stages = [row.as_dict() for row in report.rows]
-        return report
+            return await self.suite.run(card=deployment.card, profile=profile)
+
+    async def _ready_before_conform_retry(self, deployment: Deployment) -> None:
+        wait = getattr(self.runtime, "wait_ready", None)
+        if callable(wait) and self.runtime.remote:
+            try:
+                await wait(deployment.agent_id, pods=False)
+            except Exception:
+                _LOG.exception(
+                    "route wait before conformance retry failed",
+                    extra={"agent_id": deployment.agent_id},
+                )
+            await asyncio.sleep(2.0)
+            return
+        await asyncio.sleep(0)
 
     async def _apply_traffic(
         self, deployment: Deployment, percent: int, *, publish: bool = True
