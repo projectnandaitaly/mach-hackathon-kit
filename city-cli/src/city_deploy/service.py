@@ -569,18 +569,15 @@ class DeployService:
         deployment.base_image = "city-sdk"
         deployment.status = "conformance"
         profile = self._profile(deployment.agent_id, deployment.version)
-        # First publication goes straight onto the serving route: one rollout and one
-        # load-balancer programming wait. The Index lists it only after PASS.
-        direct = (
-            self.runtime.remote
-            and deployment.promote
-            and self.runtime.serving(deployment.agent_id) is None
-        )
+        # Remote releases always place a candidate first. Conformance hits that URL;
+        # promote retargets the serving route only after PASS. A first release used to
+        # roll at 100% and flake on custody.ack (E19-deploy-first-release).
+        first_release = self.runtime.serving(deployment.agent_id) is None
         if self.runtime.remote:
             deployment.step = "rollout"
             started = time.perf_counter()
             try:
-                await self._apply_traffic(deployment, 100 if direct else 1, publish=False)
+                await self._apply_traffic(deployment, 1, publish=False)
             except RolloutFailed as exc:
                 self._pod_failed(deployment, exc)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
@@ -596,12 +593,12 @@ class DeployService:
                 "conformance runner failed",
                 extra={"agent_id": deployment.agent_id, "version": deployment.version},
             )
-            self._stop_unpassed(deployment, direct=direct)
+            self._stop_unpassed(deployment, direct=first_release)
             return self._refuse(deployment, "ERROR", "platform error", "conformance runner error")
         self._phase(deployment, "conformance", started, message="deploy phase finished")
         outcome = _outcome_of(report)
         if outcome != "PASS":
-            self._stop_unpassed(deployment, direct=direct)
+            self._stop_unpassed(deployment, direct=first_release)
             return self._refuse(
                 deployment,
                 outcome,
@@ -613,10 +610,7 @@ class DeployService:
             deployment.step = "promote"
             started = time.perf_counter()
             try:
-                if direct:
-                    await self._publish(deployment)
-                else:
-                    await self._promote_update(deployment)
+                await self._promote_update(deployment)
             except RolloutFailed as exc:
                 self._pod_failed(deployment, exc)
                 if prior is not None and prior.version != deployment.version:
@@ -1103,6 +1097,30 @@ class DeployService:
             )
             self.conform_runs += 1
             self._audit("platform retry", deployment.agent_id)
+            report = await self.suite.run(card=deployment.card, profile=profile)
+        if _outcome_of(report) != "PASS":
+            _LOG.warning(
+                "conformance failed; retrying once",
+                extra={
+                    "agent_id": deployment.agent_id,
+                    "profile": profile,
+                    "detail": _suite_detail(report),
+                },
+            )
+            wait = getattr(self.runtime, "wait_ready", None)
+            if callable(wait) and self.runtime.remote:
+                try:
+                    await wait(deployment.agent_id, pods=False)
+                except Exception:
+                    _LOG.exception(
+                        "route wait before conformance retry failed",
+                        extra={"agent_id": deployment.agent_id},
+                    )
+            else:
+                await asyncio.sleep(0)
+            self.conform_runs += 1
+            self._audit("conformance retry", deployment.agent_id)
+            deployment.profiles.append(profile)
             report = await self.suite.run(card=deployment.card, profile=profile)
         deployment.stages = [row.as_dict() for row in report.rows]
         return report

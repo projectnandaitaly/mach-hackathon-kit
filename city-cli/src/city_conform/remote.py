@@ -268,6 +268,20 @@ class RemoteAgent:
                 return
             await asyncio.sleep(0.1)
 
+    async def wait_renew(self, msg_id: str, fence: int) -> None:
+        """Wait until the city records a renew for ``msg_id`` at ``fence``, or give up."""
+
+        if self._evidence is None:
+            return
+        deadline = time.monotonic() + self._settle_wait
+        while True:
+            await self._evidence.load()
+            if any(row[0] == msg_id and row[1] == fence for row in self._evidence.renews()):
+                return
+            if time.monotonic() >= deadline:
+                return
+            await asyncio.sleep(0.1)
+
     async def index_peers(self, *, service: str, district: int | None) -> list[str] | None:
         del district
         role = role_for(service)
@@ -415,6 +429,13 @@ class RemoteAgent:
                 self._escalation = after[-1]
             else:
                 self._escalation = None
+            # A 202 renew is written by the Relay after the agent replies. Poll so
+            # custody.ack does not read an empty renew log on a cold first release.
+            if result.status == 202 and result.body.get("status") == "received":
+                msg_id = _delivery_id(payload) if payload is not None else None
+                fence = _delivery_fence(payload) if payload is not None else None
+                if msg_id is not None and fence is not None:
+                    await self.wait_renew(msg_id, fence)
         else:
             grown = 0
         accepted = _accepted(payload, result)
@@ -611,6 +632,16 @@ def _delivery_id(payload: dict[str, Any]) -> str | None:
     if not isinstance(msg_id, str) or not msg_id:
         return None
     return msg_id
+
+
+def _delivery_fence(payload: dict[str, Any]) -> int | None:
+    delivery = payload.get("delivery")
+    if not isinstance(delivery, dict):
+        return None
+    fence = delivery.get("fence")
+    if type(fence) is not int or fence < 1:
+        return None
+    return fence
 
 
 def _rows(value: object) -> list[object]:
