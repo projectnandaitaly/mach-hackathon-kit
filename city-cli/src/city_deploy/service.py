@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from secrets import token_hex, token_urlsafe
-from typing import Any, ParamSpec, Protocol, TypeVar, cast
+from typing import Any, ParamSpec, Protocol, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -44,6 +44,27 @@ from city_deploy.quota import (
     check_scale,
     recent,
 )
+from city_deploy.records import (
+    Deployment as Deployment,
+)
+from city_deploy.records import (
+    DeviceChallenge as DeviceChallenge,
+)
+from city_deploy.records import (
+    TeamSession as TeamSession,
+)
+from city_deploy.records import any_map as _any_map
+from city_deploy.records import deployment_blob as _deployment_blob
+from city_deploy.records import (
+    deployment_from,
+    device_from,
+)
+from city_deploy.records import device_blob as _device_blob
+from city_deploy.records import object_map as _object_map
+from city_deploy.records import session_blob as _session_blob
+from city_deploy.records import session_from as _session
+from city_deploy.records import text as _text
+from city_deploy.records import texts as _texts
 from city_deploy.rollouts import RolloutGate
 from city_deploy.runtime import (
     DRIVERS,
@@ -58,6 +79,7 @@ from city_deploy.runtime import (
     namespace_for,
 )
 from city_deploy.secrets import FIXED_SECRETS, KeyRing, SecretBox, SecretPort
+from city_deploy.shared import DeployRows, SharedAgentIds, SharedKeyRing, SharedState
 from city_deploy.state import StateSink
 from city_deploy.team_llm import MemoryTeamKeys, TeamKeysPort
 from city_deploy.teams import OpenTeamDirectory, TeamDirectory
@@ -81,7 +103,6 @@ _CARD_FIELDS = (
     "keys",
     "endpoints",
 )
-_STATUSES = frozenset({"accepted", "uploading", "building", "conformance", "promoted", "failed"})
 _LOG = logging.getLogger("city.deploy")
 _TEAM_SLUG = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
@@ -92,70 +113,6 @@ class EvidenceReader(Protocol):
     def snapshot(self, agent_id: str) -> Mapping[str, object]: ...
 
 
-@dataclass
-class TeamSession:
-    team_id: str
-    permissions: frozenset[str]
-    controller: PublicKey | None = None
-
-
-@dataclass
-class DeviceChallenge:
-    user_code: str
-    team: TeamSession | None = None
-    # Loopback (browser redirect) login: the token is released only by
-    # ``exchange_device`` with the one-time auth code and the PKCE verifier.
-    code_challenge: str | None = None
-    auth_code: str | None = None
-
-
-@dataclass
-class Deployment:
-    deployment_id: str
-    team_id: str
-    agent_id: str
-    version: str
-    card: dict[str, Any]
-    status: str
-    upload_url: str
-    created_at: datetime
-    runtime_name: str
-    promote: bool
-    outcome: str | None = None
-    image_digest: str | None = None
-    sbom_id: str | None = None
-    scan: str | None = None
-    base_image: str | None = None
-    stages: list[dict[str, object]] = field(default_factory=list)
-    profiles: list[str] = field(default_factory=list)
-    step: str | None = None
-    detail: str | None = None
-
-    def view(self) -> dict[str, Any]:
-        if self.status not in _STATUSES:
-            raise CapError("SCHEMA_INVALID", "status")
-        body: dict[str, Any] = {
-            "deployment_id": self.deployment_id,
-            "status": self.status,
-            "upload_url": self.upload_url,
-            "agent_id": self.agent_id,
-            "version": self.version,
-        }
-        if self.outcome is not None:
-            body["outcome"] = self.outcome
-        if self.base_image is not None:
-            body["base_image"] = self.base_image
-        if self.image_digest is not None:
-            body["image_digest"] = self.image_digest
-        if self.stages:
-            body["stages"] = self.stages
-        if self.step is not None:
-            body["step"] = self.step
-        if self.detail is not None:
-            body["detail"] = self.detail
-        return body
-
-
 def base_image_ok(dockerfile: str) -> bool:
     for line in dockerfile.splitlines():
         stripped = line.strip()
@@ -163,6 +120,20 @@ def base_image_ok(dockerfile: str) -> bool:
             continue
         return stripped == "FROM city-sdk" or stripped.startswith("FROM city-sdk:")
     return False
+
+
+def _approve(
+    challenge: DeviceChallenge, team_id: str, permissions: list[str], *, loopback: bool
+) -> dict[str, str]:
+    # A one-click approve must never bind a pollable challenge, or a
+    # crafted link would hand the session to whoever started it.
+    if loopback and challenge.code_challenge is None:
+        raise CapError("POLICY_VIOLATION", "loopback login required")
+    challenge.team = TeamSession(team_id, frozenset(permissions))
+    if challenge.code_challenge is None:
+        return {"status": "approved"}
+    challenge.auth_code = token_urlsafe(24)
+    return {"status": "approved", "auth_code": challenge.auth_code}
 
 
 def _outcome_of(report: Report) -> str:
@@ -204,6 +175,7 @@ class DeployService:
         verification_uri: str | None = None,
         builder: ImageBuilder | None = None,
         evidence: EvidenceReader | None = None,
+        rows: DeployRows | None = None,
     ) -> None:
         self.builder = builder
         self._jobs: set[asyncio.Task[None]] = set()
@@ -231,6 +203,13 @@ class DeployService:
         self.market_locked: Callable[[], bool] | None = None
         self._purged: dict[str, list[str]] = {}
         self.agent_ids = AgentIds()
+        # ADR-109: with rows, sessions, logins, ids, keys and deployments live in SQL.
+        self.shared: SharedState | None = None
+        if rows is not None:
+            self.shared = SharedState(rows, self.clock)
+            self.agent_ids = SharedAgentIds(rows)
+            self.ring = SharedKeyRing(rows)
+        self._flusher: asyncio.Task[None] | None = None
         self.rollouts = RolloutGate.from_env()
         # One writer keeps checkpoints in order: an older snapshot never lands last.
         self._checkpoints = ThreadPoolExecutor(max_workers=1, thread_name_prefix="checkpoint")
@@ -255,8 +234,9 @@ class DeployService:
             yield
 
     async def checkpoint(self) -> None:
-        """Write the snapshot off the event loop. No-op without a state sink."""
+        """Write changed deployment rows, then the snapshot, off the event loop."""
 
+        await self._flush_rows()
         if self.state is None:
             return
         body = self.snapshot()
@@ -264,26 +244,116 @@ class DeployService:
             self._checkpoints, self.state.checkpoint, body
         )
 
+    async def _flush_rows(self) -> None:
+        if self.shared is None:
+            return
+        deployments = self.shared.deployments
+        changes = deployments.changes()
+        if changes:
+            await asyncio.get_running_loop().run_in_executor(
+                self._checkpoints, deployments.write, changes
+            )
+        deployments.settle(changes)
+
+    def _start_flusher(self) -> None:
+        """While pipelines run here, other instances see their progress within a second."""
+
+        if self.shared is None or (self._flusher is not None and not self._flusher.done()):
+            return
+        self._flusher = asyncio.create_task(self._flush_while_busy())
+
+    async def _flush_while_busy(self) -> None:
+        assert self.shared is not None
+        while self.shared.deployments.busy:
+            await asyncio.sleep(1.0)
+            try:
+                await self._flush_rows()
+            except Exception:
+                _LOG.exception("deployment rows not written")
+
+    def fail_interrupted(self) -> int:
+        """SQL store, one instance: pipelines that were running before a restart are gone."""
+
+        if self.shared is None:
+            return 0
+        return self.shared.deployments.fail_interrupted(interrupted)
+
     def _team_llm_key(self, team_id: str) -> str | None:
         """The team's Gateway key for its pods. Do not log the result."""
 
         return self.team_keys.read_team(team_id) if team_id else None
 
     def _audit(self, message: str, agent_id: str) -> None:
+        if self.shared is not None:
+            self.shared.audit(message, agent_id)
+            return
         self.audit.append({"message": message, "agent_id": agent_id})
 
     def _session(self, token: str) -> TeamSession:
-        found = self.sessions.get(token)
+        found = self.shared.session(token) if self.shared is not None else self.sessions.get(token)
         if found is None:
             raise CapError("POLICY_VIOLATION", "unknown team")
         return found
+
+    def _put_session(self, token: str, session: TeamSession) -> None:
+        if self.shared is not None:
+            self.shared.put_session(token, session)
+            return
+        self.sessions[token] = session
+
+    def _device(self, device_code: str) -> DeviceChallenge | None:
+        if self.shared is not None:
+            return self.shared.device(device_code)
+        return self._devices.get(device_code)
+
+    def _use_device(self, device_code: str) -> bool:
+        """Poll and exchange release one token per approved code on the SQL store."""
+
+        if self.shared is not None:
+            return self.shared.use_device(device_code)
+        return True
+
+    def _add_deployment(self, deployment: Deployment) -> None:
+        if self.shared is not None:
+            self.shared.deployments.add(deployment)
+            return
+        self.deployments[deployment.deployment_id] = deployment
+
+    def _deployment(self, deployment_id: str, *, hold: bool = False) -> Deployment | None:
+        if self.shared is not None:
+            return self.shared.deployments.get(deployment_id, hold=hold)
+        return self.deployments.get(deployment_id)
+
+    def _team_rows(self, team_id: str) -> list[Deployment]:
+        if self.shared is not None:
+            return self.shared.deployments.team(team_id)
+        return [item for item in self.deployments.values() if item.team_id == team_id]
+
+    def _all_rows(self) -> list[Deployment]:
+        if self.shared is not None:
+            return self.shared.deployments.every()
+        return list(self.deployments.values())
+
+    def _secret_names(self, agent_id: str) -> set[str]:
+        if self.shared is not None:
+            return self.shared.secret_names(agent_id)
+        return set(self.secret_names.get(agent_id, ()))
+
+    def _take_secret_names(self, agent_id: str) -> set[str]:
+        if self.shared is not None:
+            return self.shared.take_secret_names(agent_id)
+        return self.secret_names.pop(agent_id, set())
 
     def start_device(self, code_challenge: str | None = None) -> dict[str, str]:
         if code_challenge is not None and not _PKCE.fullmatch(code_challenge):
             raise CapError("SCHEMA_INVALID", "code_challenge")
         device_code = token_urlsafe(16)
         user_code = token_hex(3)
-        self._devices[device_code] = DeviceChallenge(user_code, code_challenge=code_challenge)
+        challenge = DeviceChallenge(user_code, code_challenge=code_challenge)
+        if self.shared is not None:
+            self.shared.add_device(device_code, challenge)
+        else:
+            self._devices[device_code] = challenge
         return {
             "device_code": device_code,
             "user_code": user_code,
@@ -312,33 +382,34 @@ class DeployService:
         if not team_id or not _TEAM.fullmatch("team:" + team_id):
             raise CapError("SCHEMA_INVALID", "team")
         self.teams.require(team_id)
+        if self.shared is not None:
+            found = self.shared.pending_device(user_code)
+            if found is None:
+                raise CapError("SCHEMA_INVALID", "user code")
+            code_digest, challenge = found
+            approved = _approve(challenge, team_id, permissions, loopback=loopback)
+            if not self.shared.approve_device(code_digest, challenge):
+                raise CapError("SCHEMA_INVALID", "user code")
+            return approved
         for challenge in self._devices.values():
             if challenge.user_code == user_code and challenge.team is None:
-                # A one-click approve must never bind a pollable challenge, or a
-                # crafted link would hand the session to whoever started it.
-                if loopback and challenge.code_challenge is None:
-                    raise CapError("POLICY_VIOLATION", "loopback login required")
-                challenge.team = TeamSession(team_id, frozenset(permissions))
-                if challenge.code_challenge is None:
-                    return {"status": "approved"}
-                challenge.auth_code = token_urlsafe(24)
-                return {"status": "approved", "auth_code": challenge.auth_code}
+                return _approve(challenge, team_id, permissions, loopback=loopback)
         raise CapError("SCHEMA_INVALID", "user code")
 
     def poll_device(self, device_code: str) -> dict[str, str]:
-        challenge = self._devices.get(device_code)
+        challenge = self._device(device_code)
         if challenge is not None and challenge.code_challenge is not None:
             raise CapError("POLICY_VIOLATION", "loopback login uses /login/token")
-        if challenge is None or challenge.team is None:
+        if challenge is None or challenge.team is None or not self._use_device(device_code):
             raise CapError("POLICY_VIOLATION", "authorization pending")
         token = token_urlsafe(16)
-        self.sessions[token] = challenge.team
+        self._put_session(token, challenge.team)
         return {"token": token, "team_id": challenge.team.team_id}
 
     def exchange_device(
         self, device_code: str, auth_code: str, code_verifier: str
     ) -> dict[str, str]:
-        challenge = self._devices.get(device_code)
+        challenge = self._device(device_code)
         if (
             challenge is None
             or challenge.team is None
@@ -350,9 +421,12 @@ class DeployService:
             raise CapError("SIGNATURE_INVALID", "auth code")
         if not _token_eq(_pkce_s256(code_verifier), challenge.code_challenge):
             raise CapError("SIGNATURE_INVALID", "code verifier")
-        del self._devices[device_code]
+        if self.shared is None:
+            del self._devices[device_code]
+        elif not self.shared.use_device(device_code):
+            raise CapError("POLICY_VIOLATION", "authorization pending")
         token = token_urlsafe(16)
-        self.sessions[token] = challenge.team
+        self._put_session(token, challenge.team)
         return {"token": token, "team_id": challenge.team.team_id}
 
     def register_controller(
@@ -370,6 +444,8 @@ class DeployService:
             "team:" + session.team_id, jwk, retire_x=retire_x
         )
         session.controller = PublicKey.from_jwk(stored)
+        if self.shared is not None:
+            self.shared.put_session(token, session)
         return stored
 
     def team_llm_key(self, token: str) -> dict[str, str]:
@@ -429,7 +505,10 @@ class DeployService:
             raise CapError("KEY_UNKNOWN", agent_id)
         pair = ephemeral()
         self.secrets.hold_agent_key(agent_id, pair.private)
-        self.secrets.remember_pending(agent_id, pair.public)
+        if isinstance(self.ring, SharedKeyRing):
+            self.ring.remember_pending(agent_id, pair.public)
+        else:
+            self.secrets.remember_pending(agent_id, pair.public)
         self._audit("agent key prepared", agent_id)
         return pair.public.to_jwk()
 
@@ -464,7 +543,7 @@ class DeployService:
             runtime_name=runtime_name,
             promote=promote,
         )
-        self.deployments[deployment_id] = deployment
+        self._add_deployment(deployment)
         self._audit("deployment accepted", agent_id)
         return deployment.view()
 
@@ -480,7 +559,7 @@ class DeployService:
         wait: bool = True,
     ) -> dict[str, Any]:
         session = self._session(token)
-        deployment = self._owned(session, deployment_id)
+        deployment = self._owned(session, deployment_id, hold=True)
         if deployment.status != "uploading":
             return deployment.view()
         if not base_image_ok(dockerfile) or size_bytes > MAX_IMAGE_BYTES:
@@ -499,11 +578,7 @@ class DeployService:
             if self.builder is None:
                 raise CapError("POLICY_VIOLATION", "agent image build is not configured")
             raise CapError("POLICY_VIOLATION", "source upload required: upgrade city-cli")
-        building = sum(
-            1
-            for item in self.deployments.values()
-            if item.team_id == session.team_id and item.status == "building"
-        )
+        building = sum(1 for item in self._team_rows(session.team_id) if item.status == "building")
         try:
             assert_build(building=building)
         except QuotaExceeded:
@@ -511,13 +586,34 @@ class DeployService:
             deployment.outcome = "FAIL"
             raise
         deployment.status = "building"
-        job = self._pipeline(deployment, dockerfile, pinned, recipe, files or {})
+        job = self._held(
+            deployment, self._pipeline(deployment, dockerfile, pinned, recipe, files or {})
+        )
         if wait:
             return await job
         task = asyncio.create_task(self._background(deployment, job))
         self._jobs.add(task)
         task.add_done_callback(self._jobs.discard)
         return deployment.view()
+
+    def _held(
+        self, deployment: Deployment, job: Awaitable[dict[str, Any]]
+    ) -> Awaitable[dict[str, Any]]:
+        """Keep the deployment in process while its pipeline runs here."""
+
+        if self.shared is None:
+            return job
+        deployments = self.shared.deployments
+        deployments.running(deployment)
+        self._start_flusher()
+
+        async def run() -> dict[str, Any]:
+            try:
+                return await job
+            finally:
+                deployments.finished(deployment)
+
+        return run()
 
     async def settle(self) -> None:
         """Wait for background pipelines. Tests and shutdown use it."""
@@ -692,21 +788,16 @@ class DeployService:
     def team_deployments(self, team_id: str) -> dict[str, Any]:
         """Latest attempt for each agent. A failed first deploy stays on this list."""
 
+        team = self._team_rows(team_id)
         latest: dict[str, Deployment] = {}
-        for item in self.deployments.values():
-            if item.team_id != team_id:
-                continue
+        for item in team:
             current = latest.get(item.agent_id)
             if current is None or item.created_at >= current.created_at:
                 latest[item.agent_id] = item
         rows = []
         for agent_id in sorted(latest):
             history = sorted(
-                (
-                    item
-                    for item in self.deployments.values()
-                    if item.team_id == team_id and item.agent_id == agent_id
-                ),
+                (item for item in team if item.agent_id == agent_id),
                 key=lambda item: item.created_at,
             )
             body = history[-1].view()
@@ -763,11 +854,16 @@ class DeployService:
         self.runtime.scales.pop(agent_id, None)
         self.runtime.drained.discard(agent_id)
         self.runtime.smoked.discard(agent_id)
-        names = self.secret_names.pop(agent_id, set())
+        names = self._take_secret_names(agent_id)
         await self._offload(self.secrets.forget_agent, agent_id, names)
-        self.deployments = {
-            key: item for key, item in self.deployments.items() if item.agent_id != agent_id
-        }
+        if self.shared is not None:
+            self.shared.deployments.drop_agent(agent_id)
+        else:
+            self.deployments = {
+                key: item for key, item in self.deployments.items() if item.agent_id != agent_id
+            }
+        if isinstance(self.ring, SharedKeyRing):
+            self.ring.forget(agent_id)
         self.agent_ids.retire(agent_id)
         self._audit("deleted", agent_id)
         return {"agent_id": agent_id, "deleted": True}
@@ -785,12 +881,13 @@ class DeployService:
                 for item in self.index.catalog.all_agents()
                 if item.team_id == "team:" + team_id
             }
-            | {item.agent_id for item in self.deployments.values() if item.team_id == team_id}
+            | {item.agent_id for item in self._team_rows(team_id)}
         )
         if not owned:
             owned = list(self._purged.get(team_id, []))
         sessions = [token for token, item in self.sessions.items() if item.team_id == team_id]
-        secrets = sum(len({*FIXED_SECRETS, *self.secret_names.get(a, ())}) for a in owned)
+        session_count = len(sessions) if self.shared is None else self.shared.team_sessions(team_id)
+        secrets = sum(len({*FIXED_SECRETS, *self._secret_names(a)}) for a in owned)
         team_key = await self._offload(self.team_keys.read_team, team_id) is not None
         if not dry_run:
             self._refuse_live_wave()
@@ -806,7 +903,7 @@ class DeployService:
             if callable(remove_namespace):
                 await self._offload(remove_namespace, namespace)
             for agent_id in owned:
-                names = self.secret_names.pop(agent_id, set())
+                names = self._take_secret_names(agent_id)
                 await self._offload(self.secrets.forget_agent, agent_id, names)
             team_key = await self._offload(self.team_keys.revoke_team, team_id)
             for token in sessions:
@@ -814,6 +911,8 @@ class DeployService:
             for code, challenge in list(self._devices.items()):
                 if challenge.team is not None and challenge.team.team_id == team_id:
                     del self._devices[code]
+            if self.shared is not None:
+                self.shared.drop_team(team_id)
             self._audit("team purged", "team:" + team_id)
         return {
             "team_id": team_id,
@@ -822,7 +921,7 @@ class DeployService:
             "namespace": namespace,
             "secrets": secrets,
             "team_key": team_key,
-            "sessions": len(sessions),
+            "sessions": session_count,
         }
 
     def status(self, token: str, agent_id: str) -> dict[str, Any]:
@@ -837,7 +936,8 @@ class DeployService:
         if version is None and record is not None and record.active_version:
             version = record.active_version
         keyed = self.ring.current_x(agent_id) is not None
-        has_deploy = any(item.agent_id == agent_id for item in self.deployments.values())
+        candidates = self._all_rows() if self.shared is None else self._team_rows(session.team_id)
+        has_deploy = any(item.agent_id == agent_id for item in candidates)
         initialized = keyed or record is not None or has_deploy
         deployed = visibility == "visible" and version is not None
         rating_count = 0 if record is None else record.rating_count
@@ -923,7 +1023,10 @@ class DeployService:
         if not name or not value:
             raise CapError("SCHEMA_INVALID", "secret")
         self.secrets.set_secret(agent_id, name, value)
-        self.secret_names.setdefault(agent_id, set()).add(name)
+        if self.shared is not None:
+            self.shared.add_secret_name(agent_id, name)
+        else:
+            self.secret_names.setdefault(agent_id, set()).add(name)
         self._audit("secret stored", agent_id)
         return {"agent_id": agent_id, "status": "stored", "key": name}
 
@@ -946,7 +1049,10 @@ class DeployService:
         body: Mapping[str, Any],
     ) -> dict[str, str]:
         session = self._session(token)
-        pending = self.secrets.take_pending(agent_id)
+        if isinstance(self.ring, SharedKeyRing):
+            pending = self.ring.take_pending(agent_id)
+        else:
+            pending = self.secrets.take_pending(agent_id)
         if pending is None:
             raise CapError("KEY_UNKNOWN", agent_id)
         grant = _grant_body(body.get("grant"))
@@ -978,10 +1084,7 @@ class DeployService:
         session = self._session(token)
         _require_agent(agent_id)
         _require_agent(recipient)
-        owned = any(
-            item.agent_id == agent_id and item.team_id == session.team_id
-            for item in self.deployments.values()
-        )
+        owned = any(item.agent_id == agent_id for item in self._team_rows(session.team_id))
         if not owned:
             raise CapError("TARGET_NOT_VISIBLE", agent_id)
         if not grant_id or not need_id:
@@ -1089,8 +1192,8 @@ class DeployService:
             )
         agent_id = str(card["agent_id"])
         latest: dict[str, Deployment] = {}
-        for item in sorted(self.deployments.values(), key=lambda row: row.created_at):
-            if item.team_id == session.team_id and item.status != "failed":
+        for item in sorted(self._team_rows(session.team_id), key=lambda row: row.created_at):
+            if item.status != "failed":
                 latest[item.agent_id] = item
         for other, item in latest.items():
             if other != agent_id and family_of(item.card) == family and not self._retired(other):
@@ -1113,18 +1216,16 @@ class DeployService:
         )
 
     def _team_agents(self, team_id: str) -> set[str]:
-        return {item.agent_id for item in self.deployments.values() if item.team_id == team_id}
+        return {item.agent_id for item in self._team_rows(team_id)}
 
     def _recent_deploys(self, team_id: str, agent_id: str) -> list[datetime]:
         moments = [
-            item.created_at
-            for item in self.deployments.values()
-            if item.team_id == team_id and item.agent_id == agent_id
+            item.created_at for item in self._team_rows(team_id) if item.agent_id == agent_id
         ]
         return recent(moments, self.now())
 
-    def _owned(self, session: TeamSession, deployment_id: str) -> Deployment:
-        found = self.deployments.get(deployment_id)
+    def _owned(self, session: TeamSession, deployment_id: str, *, hold: bool = False) -> Deployment:
+        found = self._deployment(deployment_id, hold=hold)
         if found is None or found.team_id != session.team_id:
             raise CapError("TARGET_NOT_VISIBLE", deployment_id)
         return found
@@ -1457,6 +1558,10 @@ class DeployService:
         }
 
     def restore(self, snapshot: Mapping[str, object]) -> None:
+        if self.shared is not None:
+            raw = snapshot.get("runtime")
+            self._restore_book(None if raw is None else _book(raw))
+            return
         deployments = _deployments(snapshot.get("deployments"))
         sessions = _sessions(snapshot.get("sessions"))
         audit = _audit(snapshot.get("audit"))
@@ -1473,9 +1578,12 @@ class DeployService:
             for agent, names in (raw_names.items() if isinstance(raw_names, Mapping) else [])
         }
         self.agent_ids.load(snapshot.get("agent_ids"))
-        if book is None:
-            book = self._rebuild_book()
-        _load_book(self.runtime, book)
+        self._restore_book(book)
+
+    def _restore_book(self, book: _Book | None) -> None:
+        """The placement book stays in the snapshot until pipelines take leases (T12)."""
+
+        _load_book(self.runtime, self._rebuild_book() if book is None else book)
         adopt = getattr(self.runtime, "adopt", None)
         if callable(adopt):
             for agent_id in list(self.runtime.revisions):
@@ -1485,7 +1593,7 @@ class DeployService:
         """Snapshots written before the book: promoted versions, serving the one Index lists."""
 
         found = _Book()
-        for deployment in sorted(self.deployments.values(), key=lambda item: item.created_at):
+        for deployment in sorted(self._all_rows(), key=lambda item: item.created_at):
             if (
                 deployment.outcome != "PASS"
                 or deployment.status != "promoted"
@@ -1664,95 +1772,28 @@ def _require_agent(agent_id: str) -> None:
         raise CapError("SCHEMA_INVALID", "agent_id")
 
 
-def _deployment_blob(dep: Deployment) -> dict[str, object]:
-    return {
-        "deployment_id": dep.deployment_id,
-        "team_id": dep.team_id,
-        "agent_id": dep.agent_id,
-        "version": dep.version,
-        "card": dep.card,
-        "status": dep.status,
-        "upload_url": dep.upload_url,
-        "created_at": dep.created_at.isoformat(),
-        "runtime_name": dep.runtime_name,
-        "promote": dep.promote,
-        "outcome": dep.outcome,
-        "image_digest": dep.image_digest,
-        "sbom_id": dep.sbom_id,
-        "scan": dep.scan,
-        "base_image": dep.base_image,
-        "stages": list(dep.stages),
-        "profiles": list(dep.profiles),
-        "step": dep.step,
-        "detail": dep.detail,
-    }
-
-
 def _public_x(jwk: Mapping[str, object]) -> str:
     if any(name in jwk for name in ("d", "priv", "p", "q")):
         raise CapError("SCHEMA_INVALID", "public JWK must not carry a private field")
     return PublicKey.from_jwk(jwk).to_jwk()["x"]
 
 
-def _session_blob(session: TeamSession) -> dict[str, object]:
-    controller = None if session.controller is None else session.controller.to_jwk()
-    return {
-        "team_id": session.team_id,
-        "permissions": sorted(session.permissions),
-        "controller": controller,
-    }
-
-
-def _device_blob(challenge: DeviceChallenge) -> dict[str, object]:
-    team = None if challenge.team is None else _session_blob(challenge.team)
-    return {
-        "user_code": challenge.user_code,
-        "team": team,
-        "code_challenge": challenge.code_challenge,
-        "auth_code": challenge.auth_code,
-    }
-
-
 def _deployments(value: object) -> dict[str, Deployment]:
     raw = _object_map(value, "deployments")
     found: dict[str, Deployment] = {}
     for dep_id, item in raw.items():
-        blob = _object_map(item, "deployment")
-        created = datetime.fromisoformat(_text(blob, "created_at"))
-        if created.tzinfo is None:
-            raise CapError("SCHEMA_INVALID", "created_at")
-        status = _text(blob, "status")
-        if status not in _STATUSES:
-            raise CapError("SCHEMA_INVALID", "status")
-        found[dep_id] = Deployment(
-            deployment_id=_text(blob, "deployment_id"),
-            team_id=_text(blob, "team_id"),
-            agent_id=_text(blob, "agent_id"),
-            version=_text(blob, "version"),
-            card=_any_map(blob.get("card")),
-            status=_text(blob, "status"),
-            upload_url=_text(blob, "upload_url"),
-            created_at=created,
-            runtime_name=_text(blob, "runtime_name"),
-            promote=_bool(blob.get("promote")),
-            outcome=_opt_text(blob.get("outcome")),
-            image_digest=_opt_text(blob.get("image_digest")),
-            sbom_id=_opt_text(blob.get("sbom_id")),
-            scan=_opt_text(blob.get("scan")),
-            base_image=_opt_text(blob.get("base_image")),
-            stages=_stages(blob.get("stages")),
-            profiles=_texts(blob.get("profiles")),
-            step=_opt_text(blob.get("step")),
-            detail=_opt_text(blob.get("detail")),
-        )
-        row = found[dep_id]
+        row = found[dep_id] = deployment_from(item)
         # A pipeline lives in the process that ran it. After a restart it is gone.
         if row.outcome is None and row.status in {"building", "conformance"}:
-            row.status = "failed"
-            row.outcome = "ERROR"
-            row.step = None
-            row.detail = "deploy restarted during the pipeline; run city deploy again"
+            interrupted(row)
     return found
+
+
+def interrupted(row: Deployment) -> None:
+    row.status = "failed"
+    row.outcome = "ERROR"
+    row.step = None
+    row.detail = "deploy restarted during the pipeline; run city deploy again"
 
 
 def _sessions(value: object) -> dict[str, TeamSession]:
@@ -1762,17 +1803,7 @@ def _sessions(value: object) -> dict[str, TeamSession]:
 
 def _devices(value: object) -> dict[str, DeviceChallenge]:
     raw = _object_map(value, "devices")
-    found: dict[str, DeviceChallenge] = {}
-    for code, item in raw.items():
-        blob = _object_map(item, "device")
-        team = blob.get("team")
-        found[code] = DeviceChallenge(
-            user_code=_text(blob, "user_code"),
-            team=None if team is None else _session(team),
-            code_challenge=_opt_text(blob.get("code_challenge")),
-            auth_code=_opt_text(blob.get("auth_code")),
-        )
-    return found
+    return {code: device_from(item) for code, item in raw.items()}
 
 
 def _audit(value: object) -> list[dict[str, str]]:
@@ -1789,66 +1820,6 @@ def _audit(value: object) -> list[dict[str, str]]:
             row[key] = cell
         rows.append(row)
     return rows
-
-
-def _session(value: object) -> TeamSession:
-    blob = _object_map(value, "session")
-    controller = blob.get("controller")
-    return TeamSession(
-        team_id=_text(blob, "team_id"),
-        permissions=frozenset(_texts(blob.get("permissions"))),
-        controller=None
-        if controller is None
-        else PublicKey.from_jwk(_object_map(controller, "jwk")),
-    )
-
-
-def _object_map(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise CapError("SCHEMA_INVALID", label)
-    out: dict[str, object] = {}
-    for key, item in value.items():
-        if not isinstance(key, str):
-            raise CapError("SCHEMA_INVALID", label)
-        out[key] = item
-    return out
-
-
-def _any_map(value: object) -> dict[str, Any]:
-    raw = _object_map(value, "card")
-    return cast(dict[str, Any], raw)
-
-
-def _text(blob: Mapping[str, object], name: str) -> str:
-    value = blob.get(name)
-    if not isinstance(value, str):
-        raise CapError("SCHEMA_INVALID", name)
-    return value
-
-
-def _opt_text(value: object) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise CapError("SCHEMA_INVALID", "text")
-    return value
-
-
-def _bool(value: object) -> bool:
-    if not isinstance(value, bool):
-        raise CapError("SCHEMA_INVALID", "promote")
-    return value
-
-
-def _texts(value: object) -> list[str]:
-    if not isinstance(value, list):
-        raise CapError("SCHEMA_INVALID", "list")
-    found: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            raise CapError("SCHEMA_INVALID", "list")
-        found.append(item)
-    return found
 
 
 def merged_stage_rows(history: Sequence[Sequence[Mapping[str, object]]]) -> list[dict[str, object]]:
@@ -1869,12 +1840,6 @@ def merged_stage_rows(history: Sequence[Sequence[Mapping[str, object]]]) -> list
                 order.append(name)
             by_name[name] = dict(stage)
     return [by_name[name] for name in order]
-
-
-def _stages(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        raise CapError("SCHEMA_INVALID", "stages")
-    return [_object_map(item, "stage") for item in value]
 
 
 def _sent_count(snapshot: Mapping[str, object]) -> int:
