@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -22,6 +23,10 @@ from city_sdk.ports import Clock, SystemClock
 _LOG = logging.getLogger("city.sdk.http")
 _PROFILE = "mhm/1.0"
 _KEY_TTL_S = 60.0
+_KEY_TRIES = 3
+_KEY_RETRY_S = 0.4
+# Deploy conformance mints this sender; it is never published to the Index.
+_CONFORM_STRANGER = "agent:t99/stranger#"
 
 
 class HttpIndex:
@@ -483,24 +488,40 @@ class HttpKeys:
         rejects legitimate citizens under load. Raise ``UPSTREAM_TIMEOUT`` (504) so
         the Relay can retry. Only a clean 404 is unknown — that is what
         ``invoke.signature`` expects for the stranger kid.
+
+        The conformance stranger is never in the Index: skip the round-trip so a
+        busy Index cannot turn that stage into a 504.
         """
 
+        if kid.startswith(_CONFORM_STRANGER):
+            return None
         cached = self._cache.get(kid)
         if cached is not None and self._clock() < cached[0]:
             return cached[1]
-        try:
-            response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
-        except httpx.HTTPError as exc:
-            raise CapError("UPSTREAM_TIMEOUT", "index key") from exc
-        if response.status_code == 404:
-            return None
-        if response.status_code >= 500:
-            raise CapError("UPSTREAM_TIMEOUT", "index key")
-        if response.status_code >= 400:
-            raise _cap_http(response, "index key")
-        public = PublicKey.from_jwk(response.json())
-        self._cache[kid] = (self._clock() + self._ttl, public)
-        return public
+        last: BaseException | None = None
+        for attempt in range(_KEY_TRIES):
+            try:
+                response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
+            except httpx.HTTPError as exc:
+                last = exc
+                if attempt + 1 < _KEY_TRIES:
+                    await asyncio.sleep(_KEY_RETRY_S)
+                    continue
+                raise CapError("UPSTREAM_TIMEOUT", "index key") from exc
+            if response.status_code == 404:
+                return None
+            if response.status_code >= 500:
+                last = CapError("UPSTREAM_TIMEOUT", "index key")
+                if attempt + 1 < _KEY_TRIES:
+                    await asyncio.sleep(_KEY_RETRY_S)
+                    continue
+                raise CapError("UPSTREAM_TIMEOUT", "index key")
+            if response.status_code >= 400:
+                raise _cap_http(response, "index key")
+            public = PublicKey.from_jwk(response.json())
+            self._cache[kid] = (self._clock() + self._ttl, public)
+            return public
+        raise CapError("UPSTREAM_TIMEOUT", "index key") from last
 
 
 class ClosedLedger:
