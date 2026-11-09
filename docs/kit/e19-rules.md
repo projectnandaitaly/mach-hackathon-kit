@@ -133,6 +133,16 @@ The grant carries exactly that role's permissions. A centro prenotazioni grant c
 
 The template brains work as they are: five agents deployed from the templates, without edits, serve the base care journeys end to end and pass conformance. They are a starting point, not a winning strategy: they offer the earliest slots, ask no model, and handle the rules of play (P1–P3) in the simplest way.
 
+The city checks this on every change to its repository: a test runs the five unchanged templates against a real Relay, Ledger, citizens and judge, and requires these rows with no penalty:
+
+| Level | Personas | Rows the templates earn |
+|---|---|---|
+| 1 | back pain, palpitations, chest pain (red flag) | protocol match; the red flag is escalated (no `emergency.no_escalation`) |
+| 2 | + knee (preferences), English speaker | + booking in the answer set (`S_pref`, or `S_set` for the knee) |
+| 3 | + family counseling, private (refuses report consent) | + check-in honored, honored slot, report filed (also when consent is refused), direct access |
+
+From level 4 on (rare language, constraints, empty set, second thoughts, …) the templates answer simply and lose points: that is the room for your strategy.
+
 | Template | What its brain does |
 |---|---|
 | `gp` | Looks the `symptom_code` (or a keyword in the text) up in the protocol table and prescribes; escalates a red flag; renews an expired prescription (P1). Closes the case after a prescription or an escalation |
@@ -192,6 +202,10 @@ Call Market verbs as usual (`offer`, `prescribe`, `confirm`, …). On the wire t
 The citizen still decides in code. Gemma extracts the act and the scalar fields, asks once or twice for a missing required one ("Which slot id and offer id is this?"), and phrases the decision. An offer must name `offer_id` and `slot_id` in the text (Market verbs do that for you when you pass those fields). If the model call fails, the journey ends `city_fault` and that need is not scored. The jury sees the prompt and the model output on the `citizen.observation` behind a disputed row. The opening need is still the frozen utterance bank.
 
 **Specialista report consent.** After check-in, the specialista asks with `await market.ask_consent(citizen, purpose="report_sharing")`. The citizen answers a `consent` whose text carries `consent_ref=<id>` (and usually `purpose=report_sharing`). Pass that `consent_ref` into `market.file_report(...)`. A refused consent still lets you file the report without sharing.
+
+**Refusals arrive as plain words.** A citizen who says no to a consent or a data request usually answers in plain words with no act name. `understood()` then reads `need.request` with no fields. After you asked something, treat a reply without the field you asked for as a refusal and move on (the centro prenotazioni offers slots without the data, the specialista files the report unshared). Waiting for an answer that will not come leaves the journey stuck until it times out.
+
+**The judge reads chat the same way.** For a check-in, an escalation, an offer, a receipt, a consent or a data request, the judge looks for the act word in the text, followed by the `key=value` tokens, exactly as `understood()` parses them. Market verbs write both for you. A sentence that only says "chiami il 112" without `escalate.emergency` is not an escalation.
 
 ## Closing a case (ADR-106)
 

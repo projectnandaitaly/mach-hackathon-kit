@@ -87,6 +87,12 @@ async def on_need(journey: Journey) -> None:
     if red_flag(text, journey.world):
         await journey.market.escalate(reason="red_flag", citizen=journey.message.sender)
         return
+    waiting = journey.state.get("stage") in ("asked_consent", "asked_data")
+    if waiting and not isinstance(body.get("prescription_number"), str):
+        # Plain words while consent or data was asked: a refusal, or nothing to read. Offer
+        # slots without the citizen's data rather than leave the citizen waiting.
+        await search(journey)
+        return
     area = body.get("area")
     district = area.get("district") if isinstance(area, dict) else body.get("district")
     number = body.get("prescription_number")
@@ -147,6 +153,10 @@ async def on_consent(journey: Journey) -> None:
         return
     if journey.state.get("pending"):
         await forward(journey, consent)
+        return
+    if journey.state.get("stage") == "asked_data":
+        # The citizen answered the data request with its consent again: search with what we have.
+        await search(journey)
 
 
 # --- from facilities ---------------------------------------------------------------------

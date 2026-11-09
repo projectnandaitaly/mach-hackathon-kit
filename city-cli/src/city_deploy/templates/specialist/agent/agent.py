@@ -37,6 +37,10 @@ async def main(need: Need, market: Market) -> None:
 async def on_need(market: Market, message: Message) -> None:
     body = message.body
     from_citizen = message.sender.startswith("citizen:")
+    if from_citizen and isinstance((await load(market, message)).get("report_for"), str):
+        # Plain words after the report consent was asked: a refusal. File it, do not share it.
+        await on_data(market, message)
+        return
     if not from_citizen and not isinstance(body.get("procedure"), str):
         return
     world = await read_world(market)
