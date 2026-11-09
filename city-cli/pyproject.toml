@@ -1,6 +1,6 @@
 [project]
 name = "city-cli"
-version = "0.9.155"
+version = "0.9.156"
 description = "Milano Agentic City CLI (city): init, dev, conform, and deploy."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,7 +17,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "city-sdk>=0.9.155",
+    "city-sdk>=0.9.156",
     "cryptography>=43",
     "fastapi>=0.115",
     "httpx>=0.27",

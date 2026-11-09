@@ -44,6 +44,7 @@ from city_deploy.quota import (
     check_scale,
     recent,
 )
+from city_deploy.rollouts import RolloutGate
 from city_deploy.runtime import (
     DRIVERS,
     EGRESS,
@@ -230,6 +231,7 @@ class DeployService:
         self.market_locked: Callable[[], bool] | None = None
         self._purged: dict[str, list[str]] = {}
         self.agent_ids = AgentIds()
+        self.rollouts = RolloutGate.from_env()
         # One writer keeps checkpoints in order: an older snapshot never lands last.
         self._checkpoints = ThreadPoolExecutor(max_workers=1, thread_name_prefix="checkpoint")
 
@@ -599,6 +601,14 @@ class DeployService:
         deployment.sbom_id = "sbom:" + digest.rsplit(":", 1)[-1][:12]
         deployment.base_image = "city-sdk"
         deployment.status = "conformance"
+        if not self.runtime.remote:
+            return await self._roll_and_release(deployment)
+        deployment.step = "rollout"
+        async with self.rollouts.slot(deployment.team_id, lambda ahead: _queued(deployment, ahead)):
+            deployment.detail = None
+            return await self._roll_and_release(deployment)
+
+    async def _roll_and_release(self, deployment: Deployment) -> dict[str, Any]:
         profile = self._profile(deployment.agent_id, deployment.version)
         # Remote releases always place a candidate first. Conformance hits that URL;
         # promote retargets the serving route only after PASS. A first release used to
@@ -1490,6 +1500,10 @@ class _Book:
     drained: set[str] = field(default_factory=set)
     smoked: set[str] = field(default_factory=set)
     egress: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+def _queued(deployment: Deployment, ahead: int) -> None:
+    deployment.detail = f"waiting for a rollout slot, {ahead} ahead"
 
 
 def _book_blob(runtime: Runtime) -> dict[str, object]:
