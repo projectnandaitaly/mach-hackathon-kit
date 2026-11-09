@@ -20,6 +20,7 @@ FACILITY_FAMILIES = ("hospital", "specialist_care")
 DAYS_KEYS = ("days", "available_days")
 GENDER_KEYS = ("gender", "gender_preference")
 BOOKING_FIELDS = ["available_days", "gender_preference"]
+TAKEN = "slots:taken"
 
 
 async def main(need: Need, market: Market) -> None:
@@ -48,13 +49,15 @@ async def main(need: Need, market: Market) -> None:
 class Journey:
     """One need as the booking centre sees it, kept in market memory under ``need:<need_id>``."""
 
-    def __init__(self, market, message, state, world, now, rules):
+    def __init__(self, market, message, state, world, now, rules, taken):
         self.market = market
         self.message = message
         self.state = state
         self.world = world
         self.now = now
         self.rules = rules
+        self.taken = taken
+        self.newly_taken = {}
 
     @classmethod
     async def open(cls, market: Market, message: Message) -> "Journey":
@@ -63,11 +66,22 @@ class Journey:
         world = (await market.world()).get("world", {})
         now = await market.agenda_now()
         rules = {str(rule["rule_id"]) for rule in await market.active_rules()}
-        return cls(market, message, state, world, now, rules)
+        return cls(market, message, state, world, now, rules, await _taken(market))
 
     async def save(self) -> None:
         if self.state:
             await self.market.remember(_key(self.message), json.dumps(self.state))
+        if self.newly_taken:
+            taken = await _taken(self.market)
+            for slot_id, seats in self.newly_taken.items():
+                taken[slot_id] = taken.get(slot_id, 0) + seats
+            await self.market.remember(TAKEN, json.dumps(taken))
+
+    def take(self, slot_id: str, seats: int = 1) -> None:
+        """Seats of an own slot now booked or refused as full, shared by every journey."""
+
+        self.newly_taken[slot_id] = self.newly_taken.get(slot_id, 0) + seats
+        self.taken[slot_id] = self.taken.get(slot_id, 0) + seats
 
     @property
     def citizen(self) -> str:
@@ -76,6 +90,12 @@ class Journey:
 
 def _key(message: Message) -> str:
     return "need:" + (message.need_id or message.sender)
+
+
+async def _taken(market: Market) -> dict:
+    raw = await market.recall(TAKEN)
+    taken = json.loads(raw) if raw else {}
+    return taken if isinstance(taken, dict) else {}
 
 
 # --- from the citizen --------------------------------------------------------------------
@@ -204,6 +224,8 @@ async def on_cancel(journey: Journey) -> None:
     excluded = journey.state.setdefault("excluded", [])
     if offer["slot_id"] not in excluded:
         excluded.append(offer["slot_id"])
+    if reason == "NO_CAPACITY":
+        journey.take(str(offer["slot_id"]), seats=capacity_of(journey.world, offer["slot_id"]))
     await search(journey)
 
 
@@ -214,6 +236,7 @@ async def on_receipt(journey: Journey) -> None:
         return
     journey.state.pop("pending", None)
     journey.state["booked"] = {"offer_id": offer["offer_id"], "booking_id": body.get("booking_id")}
+    journey.take(str(offer["slot_id"]))
     await journey.market.send_receipt(journey.citizen, body)
 
 
@@ -449,8 +472,16 @@ def own_future(journey: Journey):
         for slot in journey.world.get("slots", [])
         if slot["procedure"] == journey.state["procedure"]
         and slot["slot_id"] not in excluded
+        and journey.taken.get(slot["slot_id"], 0) < int(slot.get("capacity") or 1)
         and agenda_time(slot["agenda_date"]) >= journey.now
     ]
+
+
+def capacity_of(world, slot_id) -> int:
+    for slot in world.get("slots", []):
+        if slot["slot_id"] == slot_id:
+            return int(slot.get("capacity") or 1)
+    return 1
 
 
 def own_candidates(journey: Journey):
