@@ -213,6 +213,11 @@ class DeployService:
         self.rollouts = RolloutGate.from_env()
         # One writer keeps checkpoints in order: an older snapshot never lands last.
         self._checkpoints = ThreadPoolExecutor(max_workers=1, thread_name_prefix="checkpoint")
+        # Callers that arrive during a write share the next one, so writes follow the
+        # sink's speed rather than the request rate.
+        self._asked = 0
+        self._saved = 0
+        self._gate: tuple[asyncio.AbstractEventLoop, asyncio.Lock] | None = None
 
     def now(self) -> datetime:
         return self.clock.now()
@@ -234,15 +239,30 @@ class DeployService:
             yield
 
     async def checkpoint(self) -> None:
-        """Write changed deployment rows, then the snapshot, off the event loop."""
+        """Write changed deployment rows, then the snapshot, off the event loop.
 
-        await self._flush_rows()
-        if self.state is None:
-            return
-        body = self.snapshot()
-        await asyncio.get_running_loop().run_in_executor(
-            self._checkpoints, self.state.checkpoint, body
-        )
+        On return, a write that started after this call has landed.
+        """
+
+        self._asked += 1
+        wanted = self._asked
+        async with self._checkpoint_gate():
+            if self._saved >= wanted:
+                return
+            reached = self._asked
+            await self._flush_rows()
+            if self.state is not None:
+                body = self.snapshot()
+                await asyncio.get_running_loop().run_in_executor(
+                    self._checkpoints, self.state.checkpoint, body
+                )
+            self._saved = reached
+
+    def _checkpoint_gate(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if self._gate is None or self._gate[0] is not loop:
+            self._gate = (loop, asyncio.Lock())
+        return self._gate[1]
 
     async def _flush_rows(self) -> None:
         if self.shared is None:

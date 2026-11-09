@@ -26,7 +26,8 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
     ) -> Response:
         response = await call_next(request)
         # The CLI polls deployments every half second; a poll changes nothing.
-        poll = request.method == "GET" and request.url.path.startswith("/deployments/")
+        path = request.url.path
+        poll = request.method == "GET" and (path.startswith("/deployments/") or path == "/health")
         if not poll and response.status_code < 500:
             await service.checkpoint()
         return response
