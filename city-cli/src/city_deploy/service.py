@@ -1086,10 +1086,11 @@ class DeployService:
         return "fast"
 
     async def _run_suite(self, deployment: Deployment, profile: str) -> Report:
-        """Run the candidate suite. Retry twice on FAIL so a cold first release can warm up.
+        """Run the candidate suite. On FAIL, bounce the candidate and retry twice.
 
-        Live first attempts still flake on ``alter: ping`` / ``custody.ack`` after one
-        retry; a second retry matches what a manual ``city deploy`` would do next.
+        A failed suite leaves the pod's policy epoch advanced (``alter``), so a retry
+        against the same process fails ``alter: ping`` with ``STALE_EPOCH``. Re-applying
+        traffic stamps a new placement and rolls fresh pods before the next attempt.
         """
 
         deployment.profiles.append(profile)
@@ -1098,7 +1099,7 @@ class DeployService:
             if _outcome_of(report) == "PASS":
                 break
             _LOG.warning(
-                "conformance failed; retrying",
+                "conformance failed; bouncing candidate and retrying",
                 extra={
                     "agent_id": deployment.agent_id,
                     "profile": profile,
@@ -1106,7 +1107,7 @@ class DeployService:
                     "detail": _suite_detail(report),
                 },
             )
-            await self._ready_before_conform_retry(deployment)
+            await self._bounce_candidate_for_conform_retry(deployment)
             self._audit("conformance retry", deployment.agent_id)
             deployment.profiles.append(profile)
             report = await self._suite_once(deployment, profile)
@@ -1126,19 +1127,29 @@ class DeployService:
             self._audit("platform retry", deployment.agent_id)
             return await self.suite.run(card=deployment.card, profile=profile)
 
-    async def _ready_before_conform_retry(self, deployment: Deployment) -> None:
-        wait = getattr(self.runtime, "wait_ready", None)
-        if callable(wait) and self.runtime.remote:
-            try:
-                await wait(deployment.agent_id, pods=False)
-            except Exception:
-                _LOG.exception(
-                    "route wait before conformance retry failed",
-                    extra={"agent_id": deployment.agent_id},
-                )
-            await asyncio.sleep(2.0)
+    async def _bounce_candidate_for_conform_retry(self, deployment: Deployment) -> None:
+        """Roll the candidate pods so the next suite starts at policy epoch 0."""
+
+        if not self.runtime.remote:
+            await asyncio.sleep(0)
             return
-        await asyncio.sleep(0)
+        try:
+            await self._apply_traffic(deployment, 1, publish=False)
+        except Exception:
+            _LOG.exception(
+                "candidate bounce before conformance retry failed",
+                extra={"agent_id": deployment.agent_id},
+            )
+            wait = getattr(self.runtime, "wait_ready", None)
+            if callable(wait):
+                try:
+                    await wait(deployment.agent_id, pods=False)
+                except Exception:
+                    _LOG.exception(
+                        "route wait before conformance retry failed",
+                        extra={"agent_id": deployment.agent_id},
+                    )
+            await asyncio.sleep(2.0)
 
     async def _apply_traffic(
         self, deployment: Deployment, percent: int, *, publish: bool = True
