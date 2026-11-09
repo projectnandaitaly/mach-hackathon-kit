@@ -18,6 +18,7 @@ from cap.core.keys import PrivateKey, PublicKey, generate
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from city_sdk.city import CarePort
 from city_sdk.gateway_client import AsyncGateway
 from city_sdk.gateway_env import load_gateway
 from city_sdk.harness import Brain, Harness
@@ -32,7 +33,6 @@ from city_sdk.http import (
     HttpRelay,
 )
 from city_sdk.llm import GATEWAY, LlmConnector
-from city_sdk.market import CarePort
 from city_sdk.ports import ClosedCare, MemoryAttest, MemoryIndex, MemoryLedger, MemoryRelay
 
 _CLOUD = ("CITY_RELAY_URL", "CITY_INDEX_URL", "CITY_ATTESTATION_URL", "CITY_KEY_PATH")

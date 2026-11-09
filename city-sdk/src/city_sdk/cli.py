@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from city_sdk.city import City, Need, Peer, RankFn
 from city_sdk.harness import Brain
 from city_sdk.layers import preserve_order
-from city_sdk.market import Market, Need, Peer, RankFn
 from city_sdk.ports import MemoryAttest, MemoryIndex, MemoryLedger
 
 
@@ -28,7 +28,7 @@ async def run_scenario(
 ) -> list[str]:
     asked: list[str] = []
     relay = _RecordingRelay(asked)
-    market = Market(
+    market = City(
         index=MemoryIndex(peers=list(peers)),
         relay=relay,
         ledger=MemoryLedger(),

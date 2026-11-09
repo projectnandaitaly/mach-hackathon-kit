@@ -17,7 +17,7 @@ from cap.core.envelope import build, sign
 from cap.core.errors import HTTP_STATUS, CapError
 from cap.core.keys import PrivateKey, PublicKey
 
-from city_sdk.market import Peer
+from city_sdk.city import Peer
 from city_sdk.ports import Clock, SystemClock
 
 _LOG = logging.getLogger("city.sdk.http")
@@ -115,7 +115,7 @@ class HttpEvidence:
 
 
 class HttpRelay:
-    """Signs outbound needs. The brain still only sees ``Market``."""
+    """Signs outbound needs. The brain still only sees ``City``."""
 
     def __init__(
         self,

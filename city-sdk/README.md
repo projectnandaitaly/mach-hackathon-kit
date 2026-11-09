@@ -2,7 +2,7 @@
 
 Python SDK for **Milano Agentic City** agents.
 
-Day-1 team code uses only `city_sdk.market.Market`: domain verbs (`Need`, `Peer`, find, ask, escalate, …). The harness (HTTP endpoints, signing, journal, custody) ships in this package and is not called directly by brains.
+Day-1 team code uses only `city_sdk.city.City`: domain verbs (`Need`, `Peer`, find, ask, escalate, …). The harness (HTTP endpoints, signing, journal, custody) ships in this package and is not called directly by brains.
 
 The published wheel **includes `cap`** (protocol primitives). You do **not** install a separate `cap-core` package.
 
@@ -22,16 +22,16 @@ uv add city-sdk
 ## Quick start
 
 ```python
-from city_sdk.market import Market, Need
+from city_sdk.city import City, Need
 
 
-async def brain(need: Need, market: Market) -> None:
-    peers = await market.find_facilities(need)
+async def brain(need: Need, city: City) -> None:
+    peers = await city.find_facilities(need)
     if peers:
-        await market.ask(need, peers[0])
+        await city.ask(need, peers[0])
 ```
 
-Starter templates and `city init agent` scaffold a project that imports only `Market`. Agent type is `card.yaml` `role`. See [`city-cli`](https://pypi.org/project/city-cli/) for `city init agent` / `city deploy`.
+Starter templates and `city init agent` scaffold a project that imports only `City`. Agent type is `card.yaml` `role`. See [`city-cli`](https://pypi.org/project/city-cli/) for `city init agent` / `city deploy`.
 
 ## Runtime vs kit
 

@@ -1,8 +1,8 @@
-# Market, day 1
+# City, day 1
 
-Team code talks to the city through `city_sdk.market.Market`.
+Team code talks to the city through `city_sdk.city.City`.
 
-A **brain** is an async function of a `Need` and a `Market`. It finds peers, may reorder them with its own plugin, then asks, offers, remembers, or escalates. The **harness** serves the agent: brains do not open connections and do not sign messages.
+A **brain** is an async function of a `Need` and a `City`. It finds peers, may reorder them with its own plugin, then asks, offers, remembers, or escalates. The **harness** serves the agent: brains do not open connections and do not sign messages.
 
 ## Start here
 
@@ -22,4 +22,4 @@ A **brain** is an async function of a `Need` and a `Market`. It finds peers, may
 
 ## Speech and acts
 
-Market verbs still name the act in your brain; on the team edge the SDK sends chat text only (ADR-084). Citizens extract scalar fields from that text. Nested objects do not survive the wire. See [Free text / chat on the team edge](e19-rules.md#free-text--chat-on-the-team-edge-adr-084) in the rules.
+City verbs still name the act in your brain; on the team edge the SDK sends chat text only (ADR-084). Citizens extract scalar fields from that text. Nested objects do not survive the wire. See [Free text / chat on the team edge](e19-rules.md#free-text--chat-on-the-team-edge-adr-084) in the rules.

@@ -33,7 +33,7 @@ uv tool list | grep city-cli  # expect a current release
 
 ## Next
 
-- [Concepts](concepts.md) — passive city, ASST, harness vs brain, Market
+- [Concepts](concepts.md) — passive city, ASST, harness vs brain, City
 - [Develop agents](develop-agents.md) — install → login → init → deploy
 - [Glossary](glossary.md)
-- [Kit roles](../kit/protocol.md) — Market day-1 pointer and role stubs
+- [Kit roles](../kit/protocol.md) — City day-1 pointer and role stubs

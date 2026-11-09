@@ -11,7 +11,7 @@ from uuid import uuid4
 from cap.core.errors import CapError
 from cap.core.timeutil import format_time, parse_time
 
-from city_sdk.market import Peer, role_for
+from city_sdk.city import Peer, role_for
 
 
 class HarnessRelay(Protocol):

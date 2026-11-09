@@ -17,7 +17,7 @@ from cap.core.timeutil import format_time, parse_time
 
 from city_sdk.llm import LlmConnector
 
-MARKET_VERBS: tuple[str, ...] = (
+CITY_VERBS: tuple[str, ...] = (
     "find_facilities",
     "find_peers",
     "ask",
@@ -52,7 +52,7 @@ MARKET_VERBS: tuple[str, ...] = (
     "llm",
 )
 HOLD_TTL_SECONDS = 120
-_LOG = logging.getLogger("city_sdk.market")
+_LOG = logging.getLogger("city_sdk.city")
 
 
 class OutOfScope(Exception):
@@ -294,7 +294,7 @@ class RankFn(Protocol):
     def __call__(self, peers: list[Peer], *, service: str) -> list[Peer]: ...
 
 
-class Market:
+class City:
     """Domain verbs. Fence, lease, and signing stay in the harness."""
 
     def __init__(

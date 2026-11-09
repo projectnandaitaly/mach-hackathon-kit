@@ -11,7 +11,7 @@ close from the agent in charge would end the journey there.
 import json
 from datetime import timedelta
 
-from city_sdk.market import Market, Message, Need, OutOfScope, agenda_time, clinical, understood
+from city_sdk.city import City, Message, Need, OutOfScope, agenda_time, clinical, understood
 
 MAX_OFFERS = 3
 MAX_PEERS = 3
@@ -23,7 +23,7 @@ BOOKING_FIELDS = ["available_days", "gender_preference"]
 TAKEN = "slots:taken"
 
 
-async def main(need: Need, market: Market) -> None:
+async def main(need: Need, city: City) -> None:
     if need.summary == "__error__":
         raise RuntimeError("application")
     if clinical(need.summary):
@@ -31,7 +31,7 @@ async def main(need: Need, market: Market) -> None:
     message = understood(need.message) if need.message is not None else None
     if need.is_emergency or (message is not None and message.body.get("is_emergency") is True):
         citizen = message.sender if message and message.sender.startswith("citizen:") else None
-        await market.escalate(reason="red_flag", citizen=citizen, text="Sto segnalando un'emergenza.")
+        await city.escalate(reason="red_flag", citizen=citizen, text="Sto segnalando un'emergenza.")
         return
     if message is None:
         return
@@ -39,7 +39,7 @@ async def main(need: Need, market: Market) -> None:
     handler = (CITIZEN if from_citizen else FACILITY).get(message.type)
     if handler is None:
         return
-    journey = await Journey.open(market, message)
+    journey = await Journey.open(city, message)
     if not from_citizen and not journey.state:
         return
     await handler(journey)
@@ -47,10 +47,10 @@ async def main(need: Need, market: Market) -> None:
 
 
 class Journey:
-    """One need as the booking centre sees it, kept in market memory under ``need:<need_id>``."""
+    """One need as the booking centre sees it, kept in city memory under ``need:<need_id>``."""
 
-    def __init__(self, market, message, state, world, now, rules, taken):
-        self.market = market
+    def __init__(self, city, message, state, world, now, rules, taken):
+        self.city = city
         self.message = message
         self.state = state
         self.world = world
@@ -60,22 +60,22 @@ class Journey:
         self.newly_taken = {}
 
     @classmethod
-    async def open(cls, market: Market, message: Message) -> "Journey":
-        raw = await market.recall(_key(message))
+    async def open(cls, city: City, message: Message) -> "Journey":
+        raw = await city.recall(_key(message))
         state = json.loads(raw) if raw else {}
-        world = (await market.world()).get("world", {})
-        now = await market.agenda_now()
-        rules = {str(rule["rule_id"]) for rule in await market.active_rules()}
-        return cls(market, message, state, world, now, rules, await _taken(market))
+        world = (await city.world()).get("world", {})
+        now = await city.agenda_now()
+        rules = {str(rule["rule_id"]) for rule in await city.active_rules()}
+        return cls(city, message, state, world, now, rules, await _taken(city))
 
     async def save(self) -> None:
         if self.state:
-            await self.market.remember(_key(self.message), json.dumps(self.state))
+            await self.city.remember(_key(self.message), json.dumps(self.state))
         if self.newly_taken:
-            taken = await _taken(self.market)
+            taken = await _taken(self.city)
             for slot_id, seats in self.newly_taken.items():
                 taken[slot_id] = taken.get(slot_id, 0) + seats
-            await self.market.remember(TAKEN, json.dumps(taken))
+            await self.city.remember(TAKEN, json.dumps(taken))
 
     def take(self, slot_id: str, seats: int = 1) -> None:
         """Seats of an own slot now booked or refused as full, shared by every journey."""
@@ -92,8 +92,8 @@ def _key(message: Message) -> str:
     return "need:" + (message.need_id or message.sender)
 
 
-async def _taken(market: Market) -> dict:
-    raw = await market.recall(TAKEN)
+async def _taken(city: City) -> dict:
+    raw = await city.recall(TAKEN)
     taken = json.loads(raw) if raw else {}
     return taken if isinstance(taken, dict) else {}
 
@@ -105,7 +105,7 @@ async def on_need(journey: Journey) -> None:
     body = journey.message.body
     text = str(body.get("text") or "")
     if red_flag(text, journey.world):
-        await journey.market.escalate(reason="red_flag", citizen=journey.message.sender)
+        await journey.city.escalate(reason="red_flag", citizen=journey.message.sender)
         return
     waiting = journey.state.get("stage") in ("asked_consent", "asked_data")
     if waiting and not isinstance(body.get("prescription_number"), str):
@@ -156,7 +156,7 @@ async def on_confirm(journey: Journey) -> None:
         return
     journey.state["pending"] = {"offer_id": offer["offer_id"], "consent_ref": consent}
     if offer.get("foreign") and "P2" in journey.rules:
-        await journey.market.ask_consent(journey.citizen, purpose="cross_asst")
+        await journey.city.ask_consent(journey.citizen, purpose="cross_asst")
         return
     await forward(journey, None)
 
@@ -167,7 +167,7 @@ async def on_consent(journey: Journey) -> None:
         return
     if journey.state.get("stage") == "asked_consent":
         journey.state["stage"] = "asked_data"
-        await journey.market.request_data(
+        await journey.city.request_data(
             journey.citizen, purpose="booking", fields=list(BOOKING_FIELDS)
         )
         return
@@ -220,7 +220,7 @@ async def on_cancel(journey: Journey) -> None:
     fields = {"reason": reason if isinstance(reason, str) else "facility_cancelled"}
     if isinstance(booked, dict) and isinstance(booked.get("booking_id"), str):
         fields["booking_id"] = booked["booking_id"]
-    await journey.market.decline(journey.citizen, offer_id=offer_id, **fields)
+    await journey.city.decline(journey.citizen, offer_id=offer_id, **fields)
     excluded = journey.state.setdefault("excluded", [])
     if offer["slot_id"] not in excluded:
         excluded.append(offer["slot_id"])
@@ -237,7 +237,7 @@ async def on_receipt(journey: Journey) -> None:
     journey.state.pop("pending", None)
     journey.state["booked"] = {"offer_id": offer["offer_id"], "booking_id": body.get("booking_id")}
     journey.take(str(offer["slot_id"]))
-    await journey.market.send_receipt(journey.citizen, body)
+    await journey.city.send_receipt(journey.citizen, body)
 
 
 CITIZEN = {
@@ -264,7 +264,7 @@ async def start(journey: Journey) -> None:
         await renewal(journey)
         return
     try:
-        record = await journey.market.verify_prescription(number)
+        record = await journey.city.verify_prescription(number)
     except Exception:
         await renewal(journey)
         return
@@ -282,14 +282,14 @@ async def start(journey: Journey) -> None:
         return
     journey.state["asked"] = True
     journey.state["stage"] = "asked_consent"
-    await journey.market.ask_consent(journey.citizen, purpose="booking")
+    await journey.city.ask_consent(journey.citizen, purpose="booking")
 
 
 async def renewal(journey: Journey) -> None:
     """Rule P1: send the citizen back to the GP for a valid prescription."""
 
     journey.state["stage"] = "renewal"
-    await journey.market.request_data(
+    await journey.city.request_data(
         journey.citizen, purpose="prescription_renewal", fields=["prescription_number"]
     )
 
@@ -317,7 +317,7 @@ async def ask_partners(journey: Journey) -> bool:
     peers = []
     for family in FACILITY_FAMILIES:
         service = f"{family}.{specialty}"
-        for found in await journey.market.find_facilities(service=service):
+        for found in await journey.city.find_facilities(service=service):
             if found.agent_id not in own and found.agent_id not in {p for p, _ in peers}:
                 peers.append((found.agent_id, service))
     requests = journey.state.setdefault("requests", {})
@@ -336,7 +336,7 @@ async def ask_partners(journey: Journey) -> bool:
         if journey.state.get("days"):
             fields["days"] = list(journey.state["days"])
         try:
-            await journey.market.request_offers(peer, service_type=service, **fields)
+            await journey.city.request_offers(peer, service_type=service, **fields)
         except Exception:
             requests[request_id] = "done"
             continue
@@ -380,7 +380,7 @@ async def waiting_list(journey: Journey) -> None:
         "expiry": now,
         "prescription_number": journey.state["prescription_number"],
     }
-    await journey.market.present_offers(journey.citizen, [row])
+    await journey.city.present_offers(journey.citizen, [row])
 
 
 async def present(journey: Journey, slots) -> None:
@@ -417,7 +417,7 @@ async def present(journey: Journey, slots) -> None:
         }
         rows.append({key: value for key, value in row.items() if value is not None})
     journey.state["presented"] = True
-    await journey.market.present_offers(journey.citizen, rows)
+    await journey.city.present_offers(journey.citizen, rows)
 
 
 async def forward(journey: Journey, cross_consent) -> None:
@@ -431,7 +431,7 @@ async def forward(journey: Journey, cross_consent) -> None:
     if cross_consent is not None:
         fields["cross_asst_consent"] = cross_consent
     try:
-        await journey.market.confirm(
+        await journey.city.confirm(
             offer["facility"],
             offer_id=pending["offer_id"],
             consent_ref=pending["consent_ref"],
@@ -446,7 +446,7 @@ async def unreachable(journey: Journey, offer_id: str) -> None:
 
     journey.state.pop("pending", None)
     journey.state.setdefault("refused", []).append(offer_id)
-    await journey.market.decline(journey.citizen, offer_id=offer_id, reason="facility_unavailable")
+    await journey.city.decline(journey.citizen, offer_id=offer_id, reason="facility_unavailable")
     facility = journey.state["offers"][offer_id]["facility"]
     known = [
         row

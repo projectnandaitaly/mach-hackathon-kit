@@ -14,21 +14,21 @@ from cap.core.errors import CapError
 from cap.core.jcs import card_digest, digest
 from cap.core.keys import PrivateKey, PublicKey
 
-from city_sdk.journal import JournalEntry, MemoryJournal
-from city_sdk.layers import LayerRegistry
-from city_sdk.llm import LlmConnector
-from city_sdk.logs import HarnessLog
-from city_sdk.market import (
+from city_sdk.city import (
     AttestPort,
     CarePort,
+    City,
     EvidencePort,
     IndexPort,
-    Market,
     Message,
     Need,
     NotesPort,
     OutOfScope,
 )
+from city_sdk.journal import JournalEntry, MemoryJournal
+from city_sdk.layers import LayerRegistry
+from city_sdk.llm import LlmConnector
+from city_sdk.logs import HarnessLog
 from city_sdk.policy import PolicyStore
 from city_sdk.ports import (
     Clock,
@@ -43,7 +43,7 @@ from city_sdk.ports import (
 )
 from city_sdk.utils.logging import bind
 
-Brain = Callable[[Need, Market], Awaitable[None]]
+Brain = Callable[[Need, City], Awaitable[None]]
 KeyResolver = Callable[[str], Awaitable[PublicKey | None]]
 CITY = "city:governance"
 PROBER = "city:prober"
@@ -153,7 +153,7 @@ class Harness:
         self.evidence: EvidencePort | None = None
         self.open: list[OpenWork] = []
         self.brain_calls = 0
-        self.last_market: Market | None = None
+        self.last_market: City | None = None
         self.joined = False
         self.draining = False
         self.started = self.clock.now()
@@ -413,7 +413,7 @@ class Harness:
         )
         return 200, body
 
-    async def _think(self, need: Need, market: Market, msg_id: str) -> dict[str, Any] | None:
+    async def _think(self, need: Need, market: City, msg_id: str) -> dict[str, Any] | None:
         """Run the brain; a rejection body when it declined or crashed, else None."""
         try:
             await self.brain(need, market)
@@ -577,8 +577,8 @@ class Harness:
             return [dict(row) for row in rows]
         return [dict(row) for row in rows if row.get("need_id") == need_id]
 
-    def _market(self, traceparent: str | None, inbound: Message | None = None) -> Market:
-        return Market(
+    def _market(self, traceparent: str | None, inbound: Message | None = None) -> City:
+        return City(
             index=self.index,
             relay=self.relay,
             ledger=self.ledger,

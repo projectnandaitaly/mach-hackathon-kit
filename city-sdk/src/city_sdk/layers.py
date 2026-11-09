@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from city_sdk.market import Peer, RankFn
+from city_sdk.city import Peer, RankFn
 
 
 def preserve_order(peers: list[Peer], *, service: str) -> list[Peer]:

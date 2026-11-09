@@ -21,8 +21,8 @@ from cap.core.envelope import build, sign
 from cap.core.keys import PublicKey
 from cap.core.timeutil import format_time
 from city.testkit import ephemeral
+from city_sdk.city import role_for
 from city_sdk.http import HttpIndex
-from city_sdk.market import role_for
 from city_sdk.ports import Clock, SystemClock
 
 from city_conform.agent import HttpResult, Sender, SuiteSigners

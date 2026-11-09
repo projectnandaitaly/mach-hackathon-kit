@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any
 
 from city.testkit import ephemeral
+from city_sdk.city import City, Need, OutOfScope, Peer
 from city_sdk.harness import Brain, Harness
-from city_sdk.market import Market, Need, OutOfScope, Peer
 from city_sdk.ports import Clock, FixedClock, MemoryIndex, SystemClock
 
 from city_conform.agent import LiveAgent, Sender
@@ -28,7 +28,7 @@ def clinical(text: str) -> bool:
     return CLINICAL.search(text) is not None
 
 
-async def good_brain(need: Need, market: Market) -> None:
+async def good_brain(need: Need, market: City) -> None:
     if need.summary == "__error__":
         raise RuntimeError("application")
     if clinical(need.summary):

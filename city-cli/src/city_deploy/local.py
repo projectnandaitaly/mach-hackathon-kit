@@ -27,12 +27,12 @@ from city_sdk.boot import (
     prepare,
     reload_brain,
 )
+from city_sdk.city import City, Need, Peer
 from city_sdk.devmode import CITIZEN_SENDER, invoke_local
 from city_sdk.gateway_env import inject_team_gateway, load_team_gateway
 from city_sdk.harness import Harness
 from city_sdk.layers import preserve_order
 from city_sdk.logs import HarnessLog
-from city_sdk.market import Market, Need, Peer
 from city_sdk.ports import MemoryAttest, MemoryCare, MemoryIndex, MemoryLedger, MemoryRelay
 from city_sdk.utils.logging import configure, uvicorn_log_config
 
@@ -210,7 +210,7 @@ async def run_local_need(root: Path) -> dict[str, Any]:
     llm = llm_connector({}, team_id=team, root=root)
     relay = MemoryRelay()
     ledger = MemoryLedger()
-    market = Market(
+    market = City(
         index=MemoryIndex(peers=[_LOCAL_PEER]),
         relay=relay,
         ledger=ledger,

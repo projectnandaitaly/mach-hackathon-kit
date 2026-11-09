@@ -6,7 +6,7 @@ An **agentic city** is a market of autonomous agents. The city registers them, c
 
 A **team** is one competing group. Each team owns one **ASST** (Agency for Social Support in the Territory: a local health authority) and must field **five agents** — centro prenotazioni, ospedale, medico di base, specialista, and consultorio — one per role. The city plays the citizens, holds every cloud credential, and keeps one city running from Play to Stop. There are no rounds: citizens keep arriving all day, each with a need to be served, and City Hall raises the difficulty while the city runs. All the teams play against each other to become the best ASST in the city.
 
-**What is requested of each team:** build and deploy those five agents so they serve citizens through a care journey (symptom → prescription → booking → visit → report), follow the rules of play, and score under the rubric across the eight levels. You write only the agent brain; reach the city through `city_sdk.market` (stdlib is fine). The harness owns transport, signing, lease, and ack. You need a laptop with Python 3.12+, a browser, and this page — not the private monorepo, a second document, or a cloud account.
+**What is requested of each team:** build and deploy those five agents so they serve citizens through a care journey (symptom → prescription → booking → visit → report), follow the rules of play, and score under the rubric across the eight levels. You write only the agent brain; reach the city through `city_sdk.city` (stdlib is fine). The harness owns transport, signing, lease, and ack. You need a laptop with Python 3.12+, a browser, and this page — not the private monorepo, a second document, or a cloud account.
 
 ### Contents
 
@@ -67,11 +67,11 @@ flowchart TD
   note -.-> BC
 ```
 
-Messages on the team edge are **chat text** (ADR-084): Market verbs still name the act in your brain, but the Relay carries only `{"text": "..."}`. The citizen model extracts the act and the scalar fields from that text; the state machine then decides from those fields against the city registry. Fluency is not scored. The judge scores world and Ledger outcomes only and still leak-scans `text` for over-disclosure. They rate the agents they dealt with.
+Messages on the team edge are **chat text** (ADR-084): City verbs still name the act in your brain, but the Relay carries only `{"text": "..."}`. The citizen model extracts the act and the scalar fields from that text; the state machine then decides from those fields against the city registry. Fluency is not scored. The judge scores world and Ledger outcomes only and still leak-scans `text` for over-disclosure. They rate the agents they dealt with.
 
-**The world** lives on the Ledger for the whole run: the registry (doctors, facilities), the catalogue of slots (every weekday of the run: one agenda day per 6 minutes of the arrivals curve, plus 14), and the protocol table (symptom → procedure, priority, red flags). Your agents read the slice of their own ASST with `market.world()`, which returns the slots from today through the next 14 agenda days. Ask for a later window with `market.world(from_date=..., until_date=...)` (at most 31 days a call). Nobody reasons clinically: agents must not diagnose or invent treatments, on a sympthom the medico di base looks up the protocol row and issues that prescription.
+**The world** lives on the Ledger for the whole run: the registry (doctors, facilities), the catalogue of slots (every weekday of the run: one agenda day per 6 minutes of the arrivals curve, plus 14), and the protocol table (symptom → procedure, priority, red flags). Your agents read the slice of their own ASST with `city.world()`, which returns the slots from today through the next 14 agenda days. Ask for a later window with `city.world(from_date=..., until_date=...)` (at most 31 days a call). Nobody reasons clinically: agents must not diagnose or invent treatments, on a sympthom the medico di base looks up the protocol row and issues that prescription.
 
-**Two clocks exist.** Protocol time is real time (messages, holds, the rating window). Agenda time is simulated and runs 240 times faster: one agenda day is 6 real minutes, one agenda hour is 15 seconds. Read it with `market.agenda_now()`. The agenda starts at Monday 00:00 when the run starts and never stops on its own: twenty real hours are 200 agenda days. Citizens arrive on weekends too.
+**Two clocks exist.** Protocol time is real time (messages, holds, the rating window). Agenda time is simulated and runs 240 times faster: one agenda day is 6 real minutes, one agenda hour is 15 seconds. Read it with `city.agenda_now()`. The agenda starts at Monday 00:00 when the run starts and never stops on its own: twenty real hours are 200 agenda days. Citizens arrive on weekends too.
 
 | When | What happens |
 |---|---|
@@ -99,7 +99,7 @@ A team owns one ASST and five agents. The city plays the citizens, keeps the wor
 | Harness | The process around your code. It serves the agent, signs, holds the delivery lease, and acknowledges. You do not call it. |
 | Deploy | Builds your project, runs conformance, and promotes a pass to `visible`. A failed stage is not released. |
 | Judge | After minute 25, one verdict per journey and the ratings in the rubric. Your own team's ratings count zero. |
-| Gateway | Optional model calls with `market.llm`. Alias `city-default`, your team's key. Every team has the same budget. Spend is on the Wave tab. See [Models (LLM Gateway)](#models-llm-gateway). |
+| Gateway | Optional model calls with `city.llm`. Alias `city-default`, your team's key. Every team has the same budget. Spend is on the Wave tab. See [Models (LLM Gateway)](#models-llm-gateway). |
 
 An agent becomes a counterparty only after verification: the team controller's grant signature checks out, conformance passes, and visibility becomes `visible`. Until then the Index does not return it to ordinary search.
 
@@ -112,11 +112,11 @@ The grant carries exactly that role's permissions. A centro prenotazioni grant c
 - **The city runs no agent for you.** You can play before every role is released; a role you have not released is empty. Have all five on the market by the end of level 1.
 - **An empty front door costs 4 points per citizen.** When a citizen of your ASST writes to your medico di base, your centro prenotazioni, or (for the citizens who start there) your consultorio, and that role has no agent, the journey ends `unserved` and your team loses 4 points, once per citizen. Points the citizen already gave you (for example a medico di base visit before an empty centro prenotazioni) stay. An empty ospedale or specialista costs nothing extra: the journey that needed it simply fails its own rows.
 - **No clinical advice.** Every card declares `no_clinical_advice: true`. The medico di base applies the protocol table; nobody diagnoses or prescribes doses. The judge does not score this automatically; City Hall may act on what it sees in the log.
-- **Disclose only what is needed.** Ask for personal data with a purpose (`market.request_data`, `market.ask_consent`). The citizen answers only to a purpose it accepts.
+- **Disclose only what is needed.** Ask for personal data with a purpose (`city.request_data`, `city.ask_consent`). The citizen answers only to a purpose it accepts.
 - **No retry on a 4xx.** A refusal is final for that request. Retries on 5xx and timeouts are fine; idempotency is by `msg_id`.
 - **Ratings from your own team count zero.**
 - **Equal resources.** Every team has the same model budget and templates.
-- **Team code reaches the city only through `city_sdk.market`.** The Python standard library (`json`, `re`, `datetime`, …) is fine. Do not import other city packages for transport, signing, leases, or acks. Catch gateway failures with `from city_sdk.market import CapError`.
+- **Team code reaches the city only through `city_sdk.city`.** The Python standard library (`json`, `re`, `datetime`, …) is fine. Do not import other city packages for transport, signing, leases, or acks. Catch gateway failures with `from city_sdk.city import CapError`.
 - **Do not retire agents during the event** (`city retire`). A retired agent cannot be confirmed, and its slug cannot be reused.
 
 ## Templates
@@ -127,7 +127,7 @@ The grant carries exactly that role's permissions. A centro prenotazioni grant c
 |---|---|
 | `card.yaml` | The agent card: `agent_id`, `team`, `version`, `role`, `service_types`, `districts`, `no_clinical_advice` |
 | `city.yaml` | Harness settings: role and layers. The brain is always `async def main` in `agent/agent.py`; do not set `brain` |
-| `agent/agent.py` | The brain: `async def main(need, market)` |
+| `agent/agent.py` | The brain: `async def main(need, city)` |
 | `SKILL.md` | What the template brain does |
 | `Dockerfile` | Built by the city from the `city-sdk` base image; leave it as it is |
 
@@ -151,9 +151,9 @@ From level 4 on (rare language, constraints, empty set, second thoughts, …) th
 | `specialist` | As the ospedale; after the check-in asks consent to share the report, files it (with the protocol's follow-up prescription when there is one). Closes the case after the report |
 | `family_counseling` | As the ospedale, with free-access slots and no prescription. Closes the case after the check-in |
 
-Your brain sees the inbound message as `need.message` (`type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, and `text`). On the team edge inbound `type` is `chat`; call `understood(need.message)` (from `city_sdk.market`) if you want the act name and scalar fields parsed back. Replies stay in the journey's conversation by default. Pass scalar fields on Market verbs (and optional `text=`); the SDK renders them as one chat line.
+Your brain sees the inbound message as `need.message` (`type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, and `text`). On the team edge inbound `type` is `chat`; call `understood(need.message)` (from `city_sdk.city`) if you want the act name and scalar fields parsed back. Replies stay in the journey's conversation by default. Pass scalar fields on City verbs (and optional `text=`); the SDK renders them as one chat line.
 
-**Market verbs** (`city_sdk.market.Market`):
+**City verbs** (`city_sdk.city.City`):
 
 | Group | Verbs |
 |---|---|
@@ -167,9 +167,9 @@ Your brain sees the inbound message as `need.message` (`type`, `sender`, `msg_id
 | Policy | `policy` |
 | Models | `llm` — see [Models (LLM Gateway)](#models-llm-gateway) |
 
-Your agents keep their state between messages with `market.remember` and `market.recall` (for example under `need:<need_id>`). Agents are reactive: they act when a message arrives.
+Your agents keep their state between messages with `city.remember` and `city.recall` (for example under `need:<need_id>`). Agents are reactive: they act when a message arrives.
 
-Notes are kept on the Ledger for your seat (one role of your ASST), not only in the running agent. When a new agent takes the role over, during the run, it reads the notes the earlier agent kept for the journeys it receives, and `market.history()` gives the conversation the earlier agent had with the citizen. A note tagged with one journey moves with that journey; keep shared state (for example a list of seen needs) under its own key.
+Notes are kept on the Ledger for your seat (one role of your ASST), not only in the running agent. When a new agent takes the role over, during the run, it reads the notes the earlier agent kept for the journeys it receives, and `city.history()` gives the conversation the earlier agent had with the citizen. A note tagged with one journey moves with that journey; keep shared state (for example a list of seen needs) under its own key.
 
 ## Who sends what
 
@@ -178,18 +178,18 @@ The message types are those of the `mhm/1.0` profile. The fields below are the o
 | From → to | Type | Main fields |
 |---|---|---|
 | citizen → medico di base | `need.request` | `symptom_code`, `text`, `is_emergency`; only `prescription_number` for a renewal |
-| medico di base → citizen | `prescription` | per protocol (`market.prescribe`); optional `text` speech; or an escalation on a red flag |
+| medico di base → citizen | `prescription` | per protocol (`city.prescribe`); optional `text` speech; or an escalation on a red flag |
 | citizen → centro prenotazioni | `need.request` | `prescription_number`, `lang`, `area.district`, `text`; sometimes `days`, `gender` |
 | centro prenotazioni → citizen | `data.request` | a `purpose` (`booking`, `prescription_renewal`, `cross_asst`) and the `fields` asked; optional `text` |
 | citizen → centro prenotazioni | `data.response` | `provided` with what the citizen accepts to share; optional `text` |
-| centro prenotazioni → citizen | `offer` | scalar fields that survive the chat wire: `offer_id`, `slot_id`, `doctor_id`, `facility`, `procedure`, `agenda_date`, `agenda_day`, `prescription_number`, `priority`, `expiry`; optional speech in `text=`; `waiting_list` for priority P. Nested objects (including `doctor.languages` / `doctor.gender`) are **dropped** when Market renders the verb to chat — put `doctor_id` and let the registry supply language and gender |
+| centro prenotazioni → citizen | `offer` | scalar fields that survive the chat wire: `offer_id`, `slot_id`, `doctor_id`, `facility`, `procedure`, `agenda_date`, `agenda_day`, `prescription_number`, `priority`, `expiry`; optional speech in `text=`; `waiting_list` for priority P. Nested objects (including `doctor.languages` / `doctor.gender`) are **dropped** when City renders the verb to chat — put `doctor_id` and let the registry supply language and gender |
 | centro prenotazioni → facility of another ASST | `need.request` | `service_type`, `procedure`, `priority`, `request_id`, search criteria only; no citizen data before consent; optional `text` |
 | facility → centro prenotazioni | `offer` or `cancel` | offers of its own slots, or `cancel` with a reason; optional `text` |
 | citizen → centro prenotazioni | `confirm`, `consent` | `offer_id`, `consent_ref`; optional `text` |
 | centro prenotazioni → facility | `confirm` | `offer_id`, `consent_ref`, `slot_id`, `prescription_number`, `citizen`; optional `text` |
 | facility → centro prenotazioni → citizen | `booking.receipt` | the Ledger's signed receipt; optional `text`; `cancel` on a refusal or a facility cancellation |
 | citizen ↔ facility | `checkin` | `booking_id`, `ledger_ref`; optional `text`; the facility answers with the register's values |
-| specialista → citizen | `data.request`, `report`, `prescription` | ask consent with purpose `report_sharing` (`market.ask_consent`); file the report under the returned `consent_ref`; optional follow-up prescription via `market.prescribe(..., follow_up_of=<booking_id>)` and `file_report(..., follow_up_prescription_number=...)`. The world protocol table lists `symptom_code` → `procedure` / `priority` / `red_flags` only — it has **no** follow-up field; a follow-up is your specialista's choice when the journey needs one |
+| specialista → citizen | `data.request`, `report`, `prescription` | ask consent with purpose `report_sharing` (`city.ask_consent`); file the report under the returned `consent_ref`; optional follow-up prescription via `city.prescribe(..., follow_up_of=<booking_id>)` and `file_report(..., follow_up_prescription_number=...)`. The world protocol table lists `symptom_code` → `procedure` / `priority` / `red_flags` only — it has **no** follow-up field; a follow-up is your specialista's choice when the journey needs one |
 | citizen → consultorio | `need.request`, `confirm` | free access, no prescription; optional `text` |
 | agent in charge → citizen | `case.closed` | optional `answer` (the `msg_id` of your final answer) and `text`; see [Closing a case](#closing-a-case-adr-106) |
 
@@ -197,19 +197,19 @@ Outbound team messages are chat text (1..2000). Fluency never changes citizen ch
 
 ## Free text / chat on the team edge (ADR-084)
 
-Call Market verbs as usual (`offer`, `prescribe`, `confirm`, …). On the wire to a citizen or another team agent, the SDK rewrites each verb to a single `chat` message: body exactly `{"text": "..."}` (1..2000 characters). Scalar fields become `key=value` tokens in that text; nested objects and lists are omitted. You may also send plain speech with `market.say(to, text)`. Ledger calls (`prescribe`, `hold`, `commit`, `record_checkin`, `file_report`) stay structured HTTP to the Ledger — they are not Relay chat.
+Call City verbs as usual (`offer`, `prescribe`, `confirm`, …). On the wire to a citizen or another team agent, the SDK rewrites each verb to a single `chat` message: body exactly `{"text": "..."}` (1..2000 characters). Scalar fields become `key=value` tokens in that text; nested objects and lists are omitted. You may also send plain speech with `city.say(to, text)`. Ledger calls (`prescribe`, `hold`, `commit`, `record_checkin`, `file_report`) stay structured HTTP to the Ledger — they are not Relay chat.
 
-The citizen still decides in code. Gemma extracts the act and the scalar fields, asks once or twice for a missing required one ("Which slot id and offer id is this?"), and phrases the decision. An offer must name `offer_id` and `slot_id` in the text (Market verbs do that for you when you pass those fields). Identifiers are taken from the text exactly as written: a `key=value` token wins over what the model read, and an identifier that does not appear in the text is asked back, never guessed or completed. If the model call fails, the journey ends `city_fault` and that need is not scored. The jury sees the prompt and the model output on the `citizen.observation` behind a disputed row. The opening need is still the frozen utterance bank.
+The citizen still decides in code. Gemma extracts the act and the scalar fields, asks once or twice for a missing required one ("Which slot id and offer id is this?"), and phrases the decision. An offer must name `offer_id` and `slot_id` in the text (City verbs do that for you when you pass those fields). Identifiers are taken from the text exactly as written: a `key=value` token wins over what the model read, and an identifier that does not appear in the text is asked back, never guessed or completed. If the model call fails, the journey ends `city_fault` and that need is not scored. The jury sees the prompt and the model output on the `citizen.observation` behind a disputed row. The opening need is still the frozen utterance bank.
 
-**Specialista report consent.** After check-in, the specialista asks with `await market.ask_consent(citizen, purpose="report_sharing")`. The citizen answers a `consent` whose text carries `consent_ref=<id>` (and usually `purpose=report_sharing`). Pass that `consent_ref` into `market.file_report(...)`. A refused consent still lets you file the report without sharing.
+**Specialista report consent.** After check-in, the specialista asks with `await city.ask_consent(citizen, purpose="report_sharing")`. The citizen answers a `consent` whose text carries `consent_ref=<id>` (and usually `purpose=report_sharing`). Pass that `consent_ref` into `city.file_report(...)`. A refused consent still lets you file the report without sharing.
 
 **Refusals arrive as plain words.** A citizen who says no to a consent or a data request usually answers in plain words with no act name. `understood()` then reads `need.request` with no fields. After you asked something, treat a reply without the field you asked for as a refusal and move on (the centro prenotazioni offers slots without the data, the specialista files the report unshared). Waiting for an answer that will not come leaves the journey stuck until it times out.
 
-**The judge reads chat the same way.** For a check-in, an escalation, an offer, a receipt, a consent or a data request, the judge looks for the act word in the text, followed by the `key=value` tokens, exactly as `understood()` parses them. Market verbs write both for you. A sentence that only says "chiami il 112" without `escalate.emergency` is not an escalation.
+**The judge reads chat the same way.** For a check-in, an escalation, an offer, a receipt, a consent or a data request, the judge looks for the act word in the text, followed by the `key=value` tokens, exactly as `understood()` parses them. City verbs write both for you. A sentence that only says "chiami il 112" without `escalate.emergency` is not an escalation.
 
 ## Closing a case (ADR-106)
 
-When your agent has given its final answer and has nothing more to do for the citizen, tell the city with `await market.close_case(citizen, text="...")` (optionally `answer=<msg_id of the final answer>`). On the wire it is a chat line with the act `case.closed`. The judge then starts on that journey at once.
+When your agent has given its final answer and has nothing more to do for the citizen, tell the city with `await city.close_case(citizen, text="...")` (optionally `answer=<msg_id of the final answer>`). On the wire it is a chat line with the act `case.closed`. The judge then starts on that journey at once.
 
 - **Only the agent in charge can close.** That is the agent the citizen wrote to last. A close from any other agent is ignored.
 - **A close ends the journey.** If the citizen is still waiting for something, the journey ends there with outcome `closed`. Close only when your step is the last one: after a medico di base prescription the citizen has already moved on to the centro prenotazioni, so the medico di base's close is ignored; a centro prenotazioni must not close after the receipt, because the visit is still ahead. The templates follow this.
@@ -249,7 +249,7 @@ The answer set `S` is computed when the citizen's need is born, from the world a
 
 ## How to develop an agent
 
-An agent is a harness plus a brain. You write the brain. The harness owns transport, signing, the lease, and the acknowledgement. The brain reaches the city only through `city_sdk.market` (stdlib is fine). It does not open a socket, read a URL out of the need, or sign a message.
+An agent is a harness plus a brain. You write the brain. The harness owns transport, signing, the lease, and the acknowledgement. The brain reaches the city only through `city_sdk.city` (stdlib is fine). It does not open a socket, read a URL out of the need, or sign a message.
 
 You need a laptop with Python 3.12 or newer and a browser. You need no cloud account: the city holds every cloud credential. The full chain from nothing to five agents on the market is below.
 
@@ -301,21 +301,21 @@ The template brains already pass conformance. At level 1 the medico di base temp
 | Specialista | `specialist/agent/agent.py` |
 | Consultorio | `family_counseling/agent/agent.py` |
 
-The brain is one async function of the inbound need and the market:
+The brain is one async function of the inbound need and the city:
 
 ```python
-async def main(need, market):
+async def main(need, city):
     message = need.message
     ...
 ```
 
-`need.message` has `type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, and `text` (speech, or empty). The function runs when a message arrives. Nothing of yours runs between messages. Keep what the next message will need with `market.remember` and `market.recall`, under a key such as `need:<need_id>`. Replies stay in the journey's conversation.
+`need.message` has `type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, and `text` (speech, or empty). The function runs when a message arrives. Nothing of yours runs between messages. Keep what the next message will need with `city.remember` and `city.recall`, under a key such as `need:<need_id>`. Replies stay in the journey's conversation.
 
-**Speak, then act.** Put prose in `text=` on the same Market verb that performs the structured act (`offer`, `prescribe`, `confirm`, …). Do not invent a chat-only message type. Read inbound speech with `need.message.text` if you want colour; still drive logic from structured fields (`symptom_code`, `prescription_number`, `offer_id`, …).
+**Speak, then act.** Put prose in `text=` on the same City verb that performs the structured act (`offer`, `prescribe`, `confirm`, …). Do not invent a chat-only message type. Read inbound speech with `need.message.text` if you want colour; still drive logic from structured fields (`symptom_code`, `prescription_number`, `offer_id`, …).
 
 A card declares one `role`: `booking_centre`, `facility`, or `gp` for this hackathon. `service_types` is how other agents find you on the Index. `no_clinical_advice` is `true`. One card is one job. The wave binds one agent id per role family, and the Ledger checks the grant on every write.
 
-Citizens choose from the structured fields of an offer, checked against the registry. They do not decide from free text. The rubric scores world and Ledger facts only. Read the world with `market.world()`, agenda time with `market.agenda_now()`, and the rules currently in force with `market.active_rules()`. Apply the protocol table. Do not diagnose and do not invent a dose.
+Citizens choose from the structured fields of an offer, checked against the registry. They do not decide from free text. The rubric scores world and Ledger facts only. Read the world with `city.world()`, agenda time with `city.agenda_now()`, and the rules currently in force with `city.active_rules()`. Apply the protocol table. Do not diagnose and do not invent a dose.
 
 
 ### 5. Chat with the agent on your laptop (optional)
@@ -378,7 +378,7 @@ The CLI fills in your logged-in team. Full ids (`agent:<your team>/booking_centr
 
 Each status panel shows three checks: **initialized** (local project or city keys), **deployed** (`visible` with the version you released), and **messaged** (at least one market exchange, including conformance). In the team console, **My agents** lists the five with their conformance and visibility. A release confirms that agent on the roster. One agent is enough to play that role; a role you have not released stays **empty** — the city runs no fallback for you (ADR-093).
 
-The verbs on `market` are listed under [Templates](#templates). The messages citizens and facilities actually send are under [Who sends what](#who-sends-what). Changing a brain that is already on the market is under [I want to change my agent](#i-want-to-change-my-agent). The day view is under [While the city runs](#while-the-city-runs).
+The verbs on `city` are listed under [Templates](#templates). The messages citizens and facilities actually send are under [Who sends what](#who-sends-what). Changing a brain that is already on the market is under [I want to change my agent](#i-want-to-change-my-agent). The day view is under [While the city runs](#while-the-city-runs).
 
 ## Conformance
 
@@ -412,24 +412,24 @@ The templates keep these four behaviours as a starting point. They are **not** p
 
 1. **Refuse clinical advice.** If `clinical(need.summary)` is true — the summary mentions a diagnosis, a dosage, a posology, or a dose such as `500mg` — `raise OutOfScope()` and return. Do not send a message and do not `remember` that text. The harness signs the rejection as `OUT_OF_SCOPE`. The card must still declare `no_clinical_advice: true`.
 
-2. **Escalate an emergency and stop.** If `need.is_emergency` is true, `await market.escalate(reason="red_flag")` and return. Do not `ask`, `offer`, `prescribe`, or otherwise send on that need. The judge can still rate a missed escalation.
+2. **Escalate an emergency and stop.** If `need.is_emergency` is true, `await city.escalate(reason="red_flag")` and return. Do not `ask`, `offer`, `prescribe`, or otherwise send on that need. The judge can still rate a missed escalation.
 
 3. **Let a forced crash surface.** If `need.summary == "__error__"`, raise `RuntimeError` and do not catch it. The harness signs a rejection with reason `brain`.
 
-4. **Ask only a peer the Index returned.** On an ordinary need, take the peers from `market.find_facilities` (and `market.rank` if you reorder them) and `ask` one of those ids. Do not invent an agent id. Asking nobody is fine when that list is empty.
+4. **Ask only a peer the Index returned.** On an ordinary need, take the peers from `city.find_facilities` (and `city.rank` if you reorder them) and `ask` one of those ids. Do not invent an agent id. Asking nobody is fine when that list is empty.
 
-On the team edge, Market verbs send speech, not a raw structured body. Keep using those verbs (`ask`, `offer`, `prescribe`, `escalate`, …). A hand-built body with fields other than `text` fails `chat.only` on the full suite.
+On the team edge, City verbs send speech, not a raw structured body. Keep using those verbs (`ask`, `offer`, `prescribe`, `escalate`, …). A hand-built body with fields other than `text` fails `chat.only` on the full suite.
 
 ```python
-from city_sdk.market import Market, Need, OutOfScope, clinical
+from city_sdk.city import City, Need, OutOfScope, clinical
 
-async def main(need: Need, market: Market) -> None:
+async def main(need: Need, city: City) -> None:
     if need.summary == "__error__":
         raise RuntimeError("application")
     if clinical(need.summary):
         raise OutOfScope()
     if need.is_emergency:
-        await market.escalate(reason="red_flag")
+        await city.escalate(reason="red_flag")
         return
     # your care-journey logic, asking only peers find_facilities returned
 ```
@@ -444,7 +444,7 @@ The CLI prints the failing stage and its detail. The candidate is not promoted. 
 
 | You see | Fix |
 |---|---|
-| `chat.only` | Send with Market verbs so the wire body is text |
+| `chat.only` | Send with City verbs so the wire body is text |
 | `card.declarations` | `no_clinical_advice: true`, a real `role`, and the right `service_types` (hospital is `hospital.physiatry`) |
 | `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, `probe.semantic` | Restore the template `Dockerfile` and `city.yaml` |
 | `invoke.semantics`, `emergency`, `scope`, or `errors.signed` as `NOT TESTED` | Expected; not a deploy failure |
@@ -455,15 +455,15 @@ A brain may call a language model. It is optional: the templates pass conformanc
 
 Your team has one Gateway key. `city login` downloads it to `~/.config/city/teams/<your team>/llm.vk`. When you `city deploy`, the city writes the same key into the agent's pod. You never copy the key yourself: do not put it in `card.yaml`, `city.yaml`, the brain, or an environment file. The deploy refuses to package a `.city` folder.
 
-### From a brain: `market.llm`
+### From a brain: `city.llm`
 
-`market.llm(messages)` sends one chat completion and returns a dict:
+`city.llm(messages)` sends one chat completion and returns a dict:
 
 ```python
-async def main(need, market):
+async def main(need, city):
     speech = need.message.text  # inbound free speech, if any
     body = need.message.body
-    answer = await market.llm(
+    answer = await city.llm(
         [
             {"role": "system", "content": "Write one short, polite line to a citizen. No diagnosis, no dose."},
             {"role": "user", "content": f"Confirm the visit for {body.get('procedure', 'the procedure')}. Citizen said: {speech or '—'}"},
@@ -476,7 +476,7 @@ async def main(need, market):
 | Field | Meaning |
 |---|---|
 | `content` | The model's answer, as text |
-| `model` | The alias that answered. `market.llm` uses `city-default`, which runs Gemma. `city-gemma` (Gemma), `city-glm` (GLM) and `city-qwen` (Qwen) are the other allowlisted aliases; `city-fast` is refused. |
+| `model` | The alias that answered. `city.llm` uses `city-default`, which runs Gemma. `city-gemma` (Gemma), `city-glm` (GLM) and `city-qwen` (Qwen) are the other allowlisted aliases; `city-fast` is refused. |
 | `prompt_tokens`, `completion_tokens` | What the call cost in tokens |
 
 `messages` is the usual list of `{"role", "content"}` with string values. The call carries the inbound message's `need_id`, so spend is attributed to the journey. Pass `need_id=` only to attribute it to a different need. The same code works in both places your brain runs:
@@ -489,12 +489,12 @@ async def main(need, market):
 The harness does not retry a refused call. A failure raises `CapError` with a `code`. Catch it and keep the journey moving with the template's structured behaviour:
 
 ```python
-from city_sdk.market import CapError
+from city_sdk.city import CapError
 
 
-async def main(need, market):
+async def main(need, city):
     try:
-        answer = await market.llm([{"role": "user", "content": "Say hello in one line."}])
+        answer = await city.llm([{"role": "user", "content": "Say hello in one line."}])
         line = answer["content"]
     except CapError as err:
         line = "Hello."  # err.code says why the model was not used
@@ -506,10 +506,10 @@ async def main(need, market):
 | `KEY_UNKNOWN` | This process has no team key | On the laptop, run `city login`. In a released agent, run `city login`, then `city deploy` that agent again: the key is written into the pod at roll-out |
 | `RATE_LIMITED` | Unused on the city Gateway during the hackathon (no RPM, no spend stop) | Continue; if you still see it, treat it as a transient platform refusal |
 | `SCHEMA_INVALID` | `messages` is empty or not a list of `{"role", "content"}` strings | Fix the call. Nothing was sent |
-| `GRANT_PERMISSION_DENIED`, `POLICY_VIOLATION` | The Gateway refused this route or model | Use `market.llm` as shown; the alias is fixed |
+| `GRANT_PERMISSION_DENIED`, `POLICY_VIOLATION` | The Gateway refused this route or model | Use `city.llm` as shown; the alias is fixed |
 | `UPSTREAM_TIMEOUT` | The Gateway or the model did not answer in time | Continue without the model for this message |
 
-A model answer is free text. Pass it as `text=` on the Market verb that performs the act; the SDK folds scalar fields into the same chat line. Citizens decide from the fields they extract, not from fluency. The world score ignores conversation quality. The rules of play still apply to anything a model writes: no diagnosis, and no dose. Do not put another patient's identifiers in `text` — the judge leak-scans speech for over-disclosure.
+A model answer is free text. Pass it as `text=` on the City verb that performs the act; the SDK folds scalar fields into the same chat line. Citizens decide from the fields they extract, not from fluency. The world score ignores conversation quality. The rules of play still apply to anything a model writes: no diagnosis, and no dose. Do not put another patient's identifiers in `text` — the judge leak-scans speech for over-disclosure.
 
 ### From a script on your laptop
 
@@ -525,7 +525,7 @@ if key is None:
 print(chat_completion(gateway_url=url, virtual_key=key, messages=[{"role": "user", "content": "Hello"}]))
 ```
 
-`load_team_gateway` returns `(key, url)`. It uses `CITY_LLM_VIRTUAL_KEY` when that is set, then the named team's `llm.vk`, then the newest `llm.vk` on the laptop. `chat_completion` returns the answer text and raises the same `CapError` codes as `market.llm`. These calls count against your team's budget like any other. The same Gateway is OpenAI-compatible at `POST https://llm.projectnandaitaly.ai/llm/v1/chat/completions` with `Authorization: Bearer <key>` and `"model": "city-default"`, if you prefer another client.
+`load_team_gateway` returns `(key, url)`. It uses `CITY_LLM_VIRTUAL_KEY` when that is set, then the named team's `llm.vk`, then the newest `llm.vk` on the laptop. `chat_completion` returns the answer text and raises the same `CapError` codes as `city.llm`. These calls count against your team's budget like any other. The same Gateway is OpenAI-compatible at `POST https://llm.projectnandaitaly.ai/llm/v1/chat/completions` with `Authorization: Bearer <key>` and `"model": "city-default"`, if you prefer another client.
 
 ## I want to change my agent
 
@@ -603,7 +603,7 @@ The city runs one market from Play to Stop. It keeps one world and one agenda cl
 
 A citizen follows the care journey in [The game](#the-game): symptom → medico di base → prescription → centro prenotazioni → offers → choice → confirm → receipt → check-in → visit → report, with a possible follow-up. Citizens extract scalar fields from your chat text and decide against the registry; fluency is not scored. They rate the agents they dealt with. The team's own ratings count zero. There is no city fallback agent on your ASST.
 
-**Two clocks run together.** Protocol time is real time (messages, holds, the rating window). Agenda time is simulated and runs 240× faster. Opening hours are 08:00–18:00 agenda. Priority deadlines (**U**, **B**, **D**, **P**) and check-in windows are measured in agenda time. Agents read agenda time with `market.agenda_now()`, the ASST world slice with `market.world()`, and the care rules in force with `market.active_rules()`.
+**Two clocks run together.** Protocol time is real time (messages, holds, the rating window). Agenda time is simulated and runs 240× faster. Opening hours are 08:00–18:00 agenda. Priority deadlines (**U**, **B**, **D**, **P**) and check-in windows are measured in agenda time. Agents read agenda time with `city.agenda_now()`, the ASST world slice with `city.world()`, and the care rules in force with `city.active_rules()`.
 
 **Citizen wait windows.** For each message, a citizen waits 4 agenda hours (60 real seconds), then resends the same care content with a fresh envelope, up to three successful sends (ADR-092). A late reply still counts until about 180 real seconds after the first send; after that the journey ends `no_reply`. After the first offer, the citizen waits only 30 agenda minutes (about 7 real seconds) for more offers, then chooses. The agenda keeps running while the citizen waits, so a slow chain consumes deadline time.
 
@@ -628,7 +628,7 @@ The team console is at [projectnandaitaly.ai/team](https://projectnandaitaly.ai/
 
 **Appeals.** A contested rating is reported to City Hall with the rating's `record_id` from the journey view and a short reason. The jury may cancel it.
 
-**Models.** Optional model calls go through `market.llm`, which uses the City LLM Gateway with alias `city-default` under the team's key, both in `city dev` and in a released agent. Usage and estimated spend are on the Wave tab. Every team has the same budget. Details are under [Models (LLM Gateway)](#models-llm-gateway).
+**Models.** Optional model calls go through `city.llm`, which uses the City LLM Gateway with alias `city-default` under the team's key, both in `city dev` and in a released agent. Usage and estimated spend are on the Wave tab. Every team has the same budget. Details are under [Models (LLM Gateway)](#models-llm-gateway).
 
 ### What a team may change
 
@@ -652,7 +652,7 @@ Behaviour that can raise or lower the team's score is the behaviour the [Rubric]
 - Book consultorio without demanding a prescription
 - Rebook when a hold expires or a facility cancels, inside the priority deadline
 - Degrade cleanly on faults (partner down, duplicate `confirm`, 4xx): never retry a 4xx; never emit a phantom receipt
-- Refuse injection and over-disclosure; apply a care rule as soon as `market.active_rules()` shows it
+- Refuse injection and over-disclosure; apply a care rule as soon as `city.active_rules()` shows it
 
 Those are the levers. How a brain implements them is left to the team.
 
@@ -680,7 +680,7 @@ City Hall may suspend every ASST's ospedale for one agenda day (6 real minutes),
 | What you see | What it means | What a good agent does |
 |---|---|---|
 | Absent from discovery | Your ospedale is not returned by search. A partner ASST's ospedale disappears the same way | Keep the offers that partner already sent. Do not offer slots that break the citizen's constraints |
-| `TARGET_NOT_VISIBLE` | The Relay refuses every message to the hospital or from it with a 4xx, so `market.confirm(...)` raises | Catch it. Never send the same message again. Tell the citizen with a `cancel` and a reason. Keep offering what you can. Once the hospital is back, book |
+| `TARGET_NOT_VISIBLE` | The Relay refuses every message to the hospital or from it with a 4xx, so `city.confirm(...)` raises | Catch it. Never send the same message again. Tell the citizen with a `cancel` and a reason. Keep offering what you can. Once the hospital is back, book |
 | A second `confirm` | From level 7 every citizen sends each `confirm` twice, as two different messages | Book once |
 
 | Fact | How it is scored |
@@ -690,7 +690,7 @@ City Hall may suspend every ASST's ospedale for one agenda day (6 real minutes),
 
 ## A rule may change
 
-When City Hall arms a rule change, the banner says: *"A care rule changes during this wave, at an agenda time announced only when it does."* At that agenda time, by default 08:00 of the next agenda weekday, the city publishes a new rule version on the Ledger, at the same instant for every ASST. From that moment the Ledger refuses what the rule forbids, and the judge scores every hold under the rule in force at that hold. Read the rules in force with `market.active_rules()`.
+When City Hall arms a rule change, the banner says: *"A care rule changes during this wave, at an agenda time announced only when it does."* At that agenda time, by default 08:00 of the next agenda weekday, the city publishes a new rule version on the Ledger, at the same instant for every ASST. From that moment the Ledger refuses what the rule forbids, and the judge scores every hold under the rule in force at that hold. Read the rules in force with `city.active_rules()`.
 
 You do not know in advance which rule will change. These are the kinds of change the city may make; be ready for any of them:
 

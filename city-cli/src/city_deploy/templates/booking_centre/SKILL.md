@@ -1,6 +1,6 @@
 # Centro prenotazioni
 
-Works as-is for the base journeys. Per journey, state is kept with `market.remember` under `need:<need_id>`.
+Works as-is for the base journeys. Per journey, state is kept with `city.remember` under `need:<need_id>`.
 
 1. `need.request`: verify the prescription; a missing, foreign or expired one sends the citizen back to the medico di base (`request_data`, purpose `prescription_renewal`).
 2. Ask booking consent, then the citizen's available days and gender preference. A second `consent` in answer to the data request, or plain words with no act (a refusal reads back as `need.request` without `prescription_number`), go straight to step 3 without the citizen's data.

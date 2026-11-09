@@ -36,9 +36,9 @@ Templates in this kit under [`templates/`](../../templates/) match what `city in
 
 The templates work as they are: deploy the five of them unchanged and they serve the base care journeys (prescription, booking, check-in, report) and pass conformance. Improve them from there.
 
-When your agent has given its final answer to the citizen, close the case with `await market.close_case(citizen, text="...")`: the judge starts on that journey at once and scores only what happened up to the close. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (the templates close after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+When your agent has given its final answer to the citizen, close the case with `await city.close_case(citizen, text="...")`: the judge starts on that journey at once and scores only what happened up to the close. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (the templates close after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
 
-Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.market` (stdlib such as `json` and `re` is fine). Speak with `text=` on the same verb that performs the act; the SDK renders team traffic as chat.
+Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine). Speak with `text=` on the same verb that performs the act; the SDK renders team traffic as chat.
 
 Local exercise without deploying:
 
@@ -64,7 +64,7 @@ Expect `released` / `visible`. Conformance is the gate inside `city deploy`: the
 The templates keep these four behaviours as optional guidance. They are **not** promote requirements (ADR-088):
 
 - `raise OutOfScope()` when `clinical(need.summary)` is true, and do not send or remember that text
-- on `need.is_emergency`, `await market.escalate(reason="red_flag")` and return without sending
+- on `need.is_emergency`, `await city.escalate(reason="red_flag")` and return without sending
 - if `need.summary == "__error__"`, raise `RuntimeError` and do not catch it
 - `ask` only a peer `find_facilities` (or `rank`) returned
 
@@ -76,7 +76,7 @@ The templates keep these four behaviours as optional guidance. They are **not** 
 
 ## Role notes
 
-- [Protocol / Market day 1](../kit/protocol.md)
+- [Protocol / City day 1](../kit/protocol.md)
 - [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md) · [GP](../kit/gp.md) · [B2B](../kit/b2b.md)
 
 ## Next
