@@ -672,11 +672,7 @@ class Harness:
             or self.resolve_key is None
         ):
             return self._key_for_kid
-        try:
-            found = await self.resolve_key(kid)
-        except (CapError, KeyError, TypeError, ValueError, OSError):
-            # Index unreachable or a bad key body: treat the kid as unknown (401).
-            return self._key_for_kid
+        found = await self.resolve_key(kid)
         if found is None:
             return self._key_for_kid
 

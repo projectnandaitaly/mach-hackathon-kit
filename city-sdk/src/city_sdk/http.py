@@ -477,24 +477,14 @@ class HttpKeys:
         self._cache: dict[str, tuple[float, PublicKey]] = {}
 
     async def __call__(self, kid: str) -> PublicKey | None:
-        """Return the public key, or None when Index says unknown or cannot be reached.
-
-        A timeout or transport fault must not become HTTP 500 on ``/invoke``: the
-        harness treats a missing key as ``KEY_UNKNOWN`` (401), which is what
-        ``invoke.signature`` expects for a stranger kid.
-        """
-
         cached = self._cache.get(kid)
         if cached is not None and self._clock() < cached[0]:
             return cached[1]
-        try:
-            response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
-        except httpx.HTTPError:
-            return None
+        response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
         if response.status_code == 404:
             return None
         if response.status_code >= 400:
-            return None
+            raise _cap_http(response, "index key")
         public = PublicKey.from_jwk(response.json())
         self._cache[kid] = (self._clock() + self._ttl, public)
         return public
