@@ -477,12 +477,25 @@ class HttpKeys:
         self._cache: dict[str, tuple[float, PublicKey]] = {}
 
     async def __call__(self, kid: str) -> PublicKey | None:
+        """Return the public key, or None when Index says the kid is unknown (404).
+
+        A transport stall or Index 5xx must not become ``KEY_UNKNOWN`` (401): that
+        rejects legitimate citizens under load. Raise ``UPSTREAM_TIMEOUT`` (504) so
+        the Relay can retry. Only a clean 404 is unknown — that is what
+        ``invoke.signature`` expects for the stranger kid.
+        """
+
         cached = self._cache.get(kid)
         if cached is not None and self._clock() < cached[0]:
             return cached[1]
-        response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
+        try:
+            response = await self._client.get(f"/v1/keys/{quote(kid, safe='')}")
+        except httpx.HTTPError as exc:
+            raise CapError("UPSTREAM_TIMEOUT", "index key") from exc
         if response.status_code == 404:
             return None
+        if response.status_code >= 500:
+            raise CapError("UPSTREAM_TIMEOUT", "index key")
         if response.status_code >= 400:
             raise _cap_http(response, "index key")
         public = PublicKey.from_jwk(response.json())

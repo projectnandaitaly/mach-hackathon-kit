@@ -672,7 +672,14 @@ class Harness:
             or self.resolve_key is None
         ):
             return self._key_for_kid
-        found = await self.resolve_key(kid)
+        try:
+            found = await self.resolve_key(kid)
+        except CapError:
+            # UPSTREAM_TIMEOUT (504) must propagate so the Relay retries; other Cap
+            # codes from Index stay as raised.
+            raise
+        except (KeyError, TypeError, ValueError, OSError):
+            return self._key_for_kid
         if found is None:
             return self._key_for_kid
 

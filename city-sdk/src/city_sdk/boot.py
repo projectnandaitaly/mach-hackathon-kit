@@ -267,7 +267,9 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
             caller=agent_id,
             client=httpx.AsyncClient(base_url=index_url),
         )
-        resolve_key = HttpKeys(httpx.AsyncClient(base_url=index_url))
+        resolve_key = HttpKeys(
+            httpx.AsyncClient(base_url=index_url, timeout=httpx.Timeout(5.0, connect=2.0))
+        )
         care = (
             HttpCare(client=httpx.AsyncClient(base_url=_ledger_url(env)), grant_body=grant_body)
             if env.get("CITY_LEDGER_URL", "").strip()
