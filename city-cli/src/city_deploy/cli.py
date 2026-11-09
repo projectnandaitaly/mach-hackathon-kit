@@ -66,10 +66,7 @@ _HELP = (
     "[city]city[/city] — deploy agents to [city]Milano Agentic City[/city].\n"
     "[mute]Controller keys stay on your machine. No cloud credentials required.[/mute]"
 )
-_EPILOG = (
-    f"API  {DEFAULT_CITY_PLATFORM_URL}\n"
-    "Local  --api-url local    Scripting  --json"
-)
+_EPILOG = f"API  {DEFAULT_CITY_PLATFORM_URL}\nLocal  --api-url local    Scripting  --json"
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -268,9 +265,7 @@ def _link_login(client: _Client, *, human: bool) -> dict[str, Any]:
             opened = False
         if human:
             lead = (
-                "Open your browser to finish signing in"
-                if opened
-                else "Open this link to sign in"
+                "Open your browser to finish signing in" if opened else "Open this link to sign in"
             )
             console.print(f"[info]·[/info]  {lead}")
             typer.echo(f"\n    {link}\n")
@@ -630,6 +625,8 @@ def deploy(
     if write_card_id(project / "card.yaml", agent_id):
         text = (project / "card.yaml").read_text(encoding="utf-8")
         card_note = f"Card updated  [mute]agent_id → {agent_id}[/mute]"
+        # The pod serves the uploaded card.yaml; conformance reads agent_id from it.
+        files = encode_files(collect_context(project, parse_dockerfile(dockerfile)))
     progress.begin("mint agent key")
     minted = client.post(f"/agents/{agent_id}/keys", {})
     _fail_http(progress, minted)
