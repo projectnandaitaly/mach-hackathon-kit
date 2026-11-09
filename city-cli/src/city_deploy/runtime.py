@@ -491,6 +491,44 @@ class GkeRuntime:
         ):
             self.client.apply(manifest)
 
+    def open_front_door(self, agent_id: str) -> None:
+        """First release: the serving route, aimed at the candidate pods, while they roll out.
+
+        The gateway programs the route during rollout and conformance, so promote only
+        confirms it. The agent is not in the Index before PASS.
+        """
+
+        placed = self._placed.get(agent_id)
+        if placed is None or not placed[1].endswith("-candidate"):
+            return
+        namespace, candidate, version = placed
+        for manifest in front_door(
+            namespace=namespace,
+            service_name=dns_name(id_name(agent_id)),
+            version=version,
+            ingress_host=self.ingress_host,
+            pod_app=candidate,
+        ):
+            self.client.apply(manifest)
+
+    def close_front_door(self, agent_id: str) -> None:
+        """Undo ``open_front_door`` after a first release that did not pass."""
+
+        placed = self._placed.get(agent_id)
+        delete = getattr(self.client, "delete", None)
+        if placed is None or not callable(delete):
+            return
+        namespace = placed[0]
+        slug = dns_name(id_name(agent_id))
+        for manifest in front_door(namespace=namespace, service_name=slug, version=placed[2]):
+            delete(
+                {
+                    "apiVersion": manifest["apiVersion"],
+                    "kind": manifest["kind"],
+                    "metadata": {"name": slug, "namespace": namespace},
+                }
+            )
+
     async def wait_ready(self, agent_id: str, *, pods: bool = True) -> None:
         """Pods ready (unless ``pods`` is false), then ``/health`` through the ingress route."""
 

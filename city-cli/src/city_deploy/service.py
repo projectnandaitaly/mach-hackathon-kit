@@ -618,11 +618,15 @@ class DeployService:
             deployment.step = "rollout"
             started = time.perf_counter()
             try:
-                await self._apply_traffic(deployment, 1, publish=False)
+                await self._apply_traffic(deployment, 1, publish=False, front_door=first_release)
             except RolloutFailed as exc:
+                if first_release:
+                    await self._close_front_door(deployment)
                 await self._pod_failed(deployment, exc)
                 return self._refuse(deployment, exc.outcome, "rollout failed", exc.detail)
             except CapError as exc:
+                if first_release:
+                    await self._close_front_door(deployment)
                 return self._refuse(deployment, "ERROR", "rollout failed", exc.message or exc.code)
             self._phase(deployment, "rollout", started, message="deploy phase finished")
         deployment.step = "conformance"
@@ -653,6 +657,8 @@ class DeployService:
             try:
                 await self._promote_update(deployment)
             except RolloutFailed as exc:
+                if first_release:
+                    await self._close_front_door(deployment)
                 await self._pod_failed(deployment, exc)
                 if prior is not None and prior.version != deployment.version:
                     await self._restore(prior)
@@ -663,6 +669,8 @@ class DeployService:
                 if prior is not None and prior.version != deployment.version:
                     await self._restore(prior)
                 else:
+                    if first_release:
+                        await self._close_front_door(deployment)
                     await self._withdraw(deployment, delete=True)
                 return self._refuse(deployment, "ERROR", "release incomplete", gap)
             deployment.status = "promoted"
@@ -1194,7 +1202,12 @@ class DeployService:
             await asyncio.sleep(2.0)
 
     async def _apply_traffic(
-        self, deployment: Deployment, percent: int, *, publish: bool = True
+        self,
+        deployment: Deployment,
+        percent: int,
+        *,
+        publish: bool = True,
+        front_door: bool = False,
     ) -> None:
         # Harness join resolves the team controller via Index.get(agent_id).
         # Register before the pod starts; stay off the public query until PASS.
@@ -1208,6 +1221,9 @@ class DeployService:
             digest,
             percent,
         )
+        opener = getattr(self.runtime, "open_front_door", None)
+        if front_door and callable(opener):
+            await self._offload(opener, deployment.agent_id)
         self.runtime.egress[deployment.agent_id] = EGRESS
         await self._offload(self.secrets.issue_llm, deployment.agent_id)
         self._record_placement(deployment)
@@ -1307,6 +1323,18 @@ class DeployService:
         )
         await self._withdraw(deployment, delete=True)
 
+    async def _close_front_door(self, deployment: Deployment) -> None:
+        closer = getattr(self.runtime, "close_front_door", None)
+        if not callable(closer):
+            return
+        try:
+            await self._offload(closer, deployment.agent_id)
+        except CapError:
+            _LOG.exception(
+                "serving route of a failed first release not removed",
+                extra={"agent_id": deployment.agent_id},
+            )
+
     async def _withdraw(self, deployment: Deployment, *, delete: bool = False) -> None:
         """Undo a placement: no traffic, not certified, then stop or delete its pods."""
 
@@ -1379,6 +1407,7 @@ class DeployService:
         if not self.runtime.remote:
             return
         if direct:
+            await self._close_front_door(deployment)
             await self._withdraw(deployment, delete=True)
             return
         rows = self.runtime.revisions.get(deployment.agent_id, [])
