@@ -643,7 +643,30 @@ class GkeRuntime:
                     },
                 )
             scaled.append(name)
+        if service == slug:
+            await asyncio.to_thread(self._close_candidate_door, namespace, slug)
         return scaled
+
+    def _close_candidate_door(self, namespace: str, slug: str) -> None:
+        """Delete the candidate Service, HTTPRoute and HealthCheckPolicy.
+
+        Each Service behind the agents Gateway holds one regional backend service, a quota
+        the whole cluster shares. The serving Service selects the candidate pods by label,
+        so the promoted release does not need the candidate door.
+        """
+
+        delete = getattr(self.client, "delete", None)
+        if not callable(delete):
+            return
+        name = f"{slug}-candidate"
+        for api, kind in _FRONT_DOOR_KINDS:
+            delete(
+                {
+                    "apiVersion": api,
+                    "kind": kind,
+                    "metadata": {"name": name, "namespace": namespace},
+                }
+            )
 
     async def _log_tail(self, namespace: str, pod: str) -> str:
         read_log = getattr(self.client, "read_log", None)
@@ -771,6 +794,8 @@ class GkeRuntime:
         delete = getattr(self.client, "delete", None)
         if callable(delete):
             delete(manifest)
+            if service.endswith("-candidate"):
+                self._close_candidate_door(namespace, service.removesuffix("-candidate"))
             return
         self.quiesce(agent_id)
 
