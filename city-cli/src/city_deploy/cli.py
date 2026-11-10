@@ -398,10 +398,10 @@ def keys_rotate(
 def init_agent(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="New folder name under --root (agent slug)."),
-    template: str = typer.Option(
+    role: str = typer.Option(
         "booking_centre",
-        "--template",
-        help="Starter to copy: booking_centre, facility, gp, specialist, family_counseling, b2b.",
+        "--role",
+        help="Role family: booking_centre, gp, hospital, specialist_care, family_counseling.",
     ),
     root: Path = typer.Option(
         Path("."),
@@ -409,10 +409,10 @@ def init_agent(
         help="Parent directory. Creates <root>/<name>/ with the template.",
     ),
 ) -> None:
-    """Scaffold a local agent project from a city template."""
+    """Scaffold a local agent project from the city agent template."""
     try:
         team_id = resolve_active_team(root=root)
-        payload = init_project(root, name, template=template, team_id=team_id)
+        payload = init_project(root, name, role=role, team_id=team_id)
     except CapError as exc:
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc

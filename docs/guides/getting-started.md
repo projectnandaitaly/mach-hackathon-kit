@@ -18,10 +18,11 @@ uv tool list | grep city-cli  # expect a current release
 
 ## Day-1 path
 
-1. Read the contest rules: [Care journey rules](../kit/e19-rules.md).
-2. Skim [Concepts](concepts.md) if terms are new.
-3. Follow [How to develop an agent](develop-agents.md) (or the same steps inside the rules doc) until five agents are `visible`.
-4. Use the team console for journeys, roster, and market status while the city runs.
+1. Read how each level unfolds: [The eight levels, as they happen](../kit/levels.md).
+2. Read the contest rules: [Care journey rules](../kit/e19-rules.md).
+3. Skim [Concepts](concepts.md) if terms are new.
+4. Follow [How to develop an agent](develop-agents.md) (or the same steps inside the rules doc) until five agents are `visible`.
+5. Use the team console for journeys, roster, and market status while the city runs.
 
 ## Surfaces
 
@@ -33,6 +34,7 @@ uv tool list | grep city-cli  # expect a current release
 
 ## Next
 
+- [The eight levels](../kit/levels.md) — who arrives at each ceiling, and how the journey ends
 - [Concepts](concepts.md) — passive city, ASST, harness vs brain, City
 - [Develop agents](develop-agents.md) — install → login → init → deploy
 - [Glossary](glossary.md)

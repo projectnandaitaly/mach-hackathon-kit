@@ -14,8 +14,9 @@ from cap.core.timeutil import format_time
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from city_sdk.city import Message
 from city_sdk.harness import Harness
-from city_sdk.ports import MemoryCare, MemoryLedger, MemoryRelay
+from city_sdk.ports import MemoryRelay
 
 LOCAL_SENDER = "agent:local/dev"
 CITIZEN_SENDER = "citizen:local/dev"
@@ -24,6 +25,7 @@ _RICH_FIELDS = frozenset({"type", "body", "from", *_NEED_FIELDS})
 _MESSAGE_TYPES = frozenset(
     {
         "need.request",
+        "chat",
         "checkin",
         "confirm",
         "data.response",
@@ -32,6 +34,9 @@ _MESSAGE_TYPES = frozenset(
         "cancel",
     }
 )
+# Stand-in Ledger answers delivered back after one local turn; a brain that keeps asking
+# the Ledger stops here.
+_LEDGER_TURNS = 8
 
 
 @dataclass(frozen=True)
@@ -43,7 +48,7 @@ class LocalMessage:
 
 def mount_dev_invoke(app: FastAPI, harness: Harness) -> None:
     """Accept a local payload and deliver it through the in-memory harness."""
-    if not isinstance(harness.relay, MemoryRelay) or not isinstance(harness.ledger, MemoryLedger):
+    if not isinstance(harness.relay, MemoryRelay):
         raise CapError("POLICY_VIOLATION", "dev")
 
     @app.post("/dev/invoke")
@@ -127,97 +132,74 @@ def _parse_rich(payload: dict[str, object]) -> LocalMessage:
 
 
 async def invoke_local(harness: Harness, payload: object) -> dict[str, Any]:
-    """Deliver one local message through the in-memory harness and return actions."""
-    if not isinstance(harness.relay, MemoryRelay) or not isinstance(harness.ledger, MemoryLedger):
+    """Deliver one local message through the in-memory harness, then the stand-in Ledger's
+    answers, and return what the brain said."""
+    relay = harness.relay
+    if not isinstance(relay, MemoryRelay):
         raise CapError("POLICY_VIOLATION", "dev")
     message = parse_local_payload(payload)
     pair = generate()
     kid = message.sender + "#k1"
     harness.keys[kid] = pair.public
-    relay = harness.relay
-    ledger = harness.ledger
-    care = harness.care if isinstance(harness.care, MemoryCare) else None
-    sent = len(relay.sent)
     posted = len(relay.posted)
-    calls = len(ledger.calls)
-    care_calls = len(care.calls) if care is not None else 0
-    escalations = len(harness.escalations)
     status, outcome = await harness.invoke(
-        _delivery(
-            harness,
-            message,
-            private=pair.private,
-            kid=kid,
-        )
+        _delivery(harness, message, private=pair.private, kid=kid)
     )
+    answered: list[Message] = []
+    for _ in range(_LEDGER_TURNS):
+        if not relay.replies:
+            break
+        reply = relay.replies.pop(0)
+        answered.append(reply)
+        await deliver_reply(harness, reply)
     return {
         "http_status": status,
         "status": outcome.get("status"),
-        "actions": local_actions(
-            harness,
-            sent=sent,
-            posted=posted,
-            calls=calls,
-            care_calls=care_calls,
-            escalations=escalations,
-        ),
+        "actions": local_actions(harness, posted=posted, answered=answered),
     }
 
 
+async def deliver_reply(harness: Harness, reply: Message) -> tuple[int, dict[str, Any]]:
+    """Deliver a stand-in Ledger answer to the brain as its next inbound message."""
+
+    pair = generate()
+    kid = reply.sender + "#k1"
+    harness.keys[kid] = pair.public
+    local = LocalMessage(message_type="chat", sender=reply.sender, body=dict(reply.body))
+    return await harness.invoke(
+        _delivery(
+            harness,
+            local,
+            private=pair.private,
+            kid=kid,
+            need_id=reply.need_id or "local",
+            conversation_id=reply.conversation_id,
+        )
+    )
+
+
 def local_actions(
-    harness: Harness,
-    *,
-    sent: int,
-    calls: int,
-    escalations: int,
-    posted: int = 0,
-    care_calls: int = 0,
+    harness: Harness, *, posted: int = 0, answered: list[Message] | None = None
 ) -> list[dict[str, str]]:
     relay = harness.relay
-    ledger = harness.ledger
-    if not isinstance(relay, MemoryRelay) or not isinstance(ledger, MemoryLedger):
+    if not isinstance(relay, MemoryRelay):
         raise CapError("POLICY_VIOLATION", "dev")
     actions: list[dict[str, str]] = []
-    for agent_id, _body, _trace in relay.sent[sent:]:
-        actions.append({"kind": "send", "peer": agent_id})
     for row in relay.posted[posted:]:
-        actions.append(
-            {
-                "kind": "post",
-                "to": str(row.get("to", "")),
-                "type": str(row.get("type", "")),
-            }
-        )
-    for kind, target in ledger.calls[calls:]:
-        if kind == "hold":
-            actions.append({"kind": kind, "peer": target})
-        else:
-            actions.append({"kind": kind, "hold": target})
-    care = harness.care
-    if isinstance(care, MemoryCare):
-        for kind, detail in care.calls[care_calls:]:
-            actions.append({"kind": str(kind), "detail": _care_detail(detail)})
-    for reason in harness.escalations[escalations:]:
-        actions.append({"kind": "escalate", "reason": reason})
+        body = row.get("body")
+        text = body.get("text") if isinstance(body, dict) else None
+        status = body.get("status") if isinstance(body, dict) else None
+        action = {
+            "kind": "say",
+            "to": str(row.get("to", "")),
+            "text": text if isinstance(text, str) else "",
+        }
+        if isinstance(status, str):
+            action["status"] = status
+        actions.append(action)
+    for reply in answered or []:
+        actions.append({"kind": "ledger", "text": reply.text})
     return actions
-
-
-def _care_detail(detail: object) -> str:
-    if isinstance(detail, str):
-        return detail
-    if isinstance(detail, dict):
-        for key in (
-            "prescription_number",
-            "booking_id",
-            "hold_id",
-            "facility_id",
-            "procedure",
-        ):
-            value = detail.get(key)
-            if isinstance(value, str) and value:
-                return value
-        return json.dumps(detail, sort_keys=True)[:120]
-    return str(detail)
 
 
 async def _json_object(request: Request) -> object:
@@ -236,6 +218,8 @@ def _delivery(
     *,
     private: PrivateKey,
     kid: str,
+    need_id: str = "local",
+    conversation_id: str | None = None,
 ) -> dict[str, Any]:
     msg_id = str(uuid4())
     now = harness.clock.now()
@@ -251,7 +235,8 @@ def _delivery(
             sent_at=now,
             body=message.body,
             profile=profile_name,
-            need_id="local",
+            need_id=need_id,
+            conversation_id=conversation_id,
         ),
         private,
         kid=kid,

@@ -22,8 +22,9 @@ Python brains depend on [`city-sdk`](https://pypi.org/project/city-sdk/) from Py
 ## Start here
 
 1. [Getting started](docs/guides/getting-started.md)
-2. [Care journey rules](docs/kit/e19-rules.md)
-3. [How to develop an agent](docs/guides/develop-agents.md)
+2. [The eight levels, as they happen](docs/kit/levels.md)
+3. [Care journey rules](docs/kit/e19-rules.md)
+4. [How to develop an agent](docs/guides/develop-agents.md)
 
 Team console: [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
 

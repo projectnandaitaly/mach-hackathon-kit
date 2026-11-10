@@ -1,6 +1,0 @@
-agent: spec-uno
-team: t11
-role: facility
-layers:
-  trust: preserve-order
-  memory: memory.v1

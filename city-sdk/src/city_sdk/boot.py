@@ -18,24 +18,15 @@ from cap.core.keys import PrivateKey, PublicKey, generate
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from city_sdk.city import CarePort
 from city_sdk.gateway_client import AsyncGateway
 from city_sdk.gateway_env import load_gateway
 from city_sdk.harness import Brain, Harness
-from city_sdk.http import (
-    ClosedAttest,
-    ClosedLedger,
-    HttpCare,
-    HttpEvidence,
-    HttpIndex,
-    HttpKeys,
-    HttpLedger,
-    HttpRelay,
-)
+from city_sdk.http import HttpIndex, HttpKeys, HttpRelay
 from city_sdk.llm import GATEWAY, LlmConnector
-from city_sdk.ports import ClosedCare, MemoryAttest, MemoryIndex, MemoryLedger, MemoryRelay
+from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
 
-_CLOUD = ("CITY_RELAY_URL", "CITY_INDEX_URL", "CITY_ATTESTATION_URL", "CITY_KEY_PATH")
+# An agent pod reaches the Relay, the Index, and the Gateway only (ADR-110).
+_CLOUD = ("CITY_RELAY_URL", "CITY_INDEX_URL", "CITY_KEY_PATH")
 _LOCAL_HOSTS = frozenset({"localhost", "localhost.localdomain", "0.0.0.0", "::1", "127.0.0.1"})
 _BRAIN_MODULE = "team_brain"
 
@@ -211,7 +202,7 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
         missing = [key for key in _CLOUD if not env.get(key)]
         if missing:
             raise CapError("POLICY_VIOLATION", missing[0])
-        for name in ("CITY_RELAY_URL", "CITY_INDEX_URL", "CITY_ATTESTATION_URL"):
+        for name in ("CITY_RELAY_URL", "CITY_INDEX_URL"):
             raw = env.get(name, "").strip()
             parsed = urlsplit(raw)
             if parsed.scheme != "https" or not parsed.hostname or _local_url(raw):
@@ -244,24 +235,14 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
     brain = load_brain(path.parent, BRAIN_SPEC)
     relay_url = env.get("CITY_RELAY_URL", "")
     index_url = env.get("CITY_INDEX_URL", "")
-    evidence: HttpEvidence | None = None
-    care: CarePort | None = None
     resolve_key: HttpKeys | None = None
     if cloud:
         grant_body = _grant_file(env)
-        attest_url = env.get("CITY_ATTESTATION_URL", "").strip()
-        if attest_url:
-            evidence = HttpEvidence(
-                agent_id=agent_id,
-                client=httpx.AsyncClient(base_url=attest_url.rstrip("/")),
-                grant_body=grant_body,
-            )
         relay: HttpRelay | MemoryRelay = HttpRelay(
             agent_id=agent_id,
             private=private,
             client=httpx.AsyncClient(base_url=relay_url),
             grant_body=grant_body,
-            evidence=evidence,
         )
         index: HttpIndex | MemoryIndex = HttpIndex(
             caller=agent_id,
@@ -270,26 +251,9 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
         resolve_key = HttpKeys(
             httpx.AsyncClient(base_url=index_url, timeout=httpx.Timeout(5.0, connect=2.0))
         )
-        care = (
-            HttpCare(client=httpx.AsyncClient(base_url=_ledger_url(env)), grant_body=grant_body)
-            if env.get("CITY_LEDGER_URL", "").strip()
-            else ClosedCare()
-        )
-        ledger: HttpLedger | ClosedLedger | MemoryLedger
-        if role == "facility":
-            ledger = HttpLedger(
-                client=httpx.AsyncClient(base_url=_ledger_url(env)),
-                grant_body=grant_body,
-                facility_id=agent_id,
-            )
-        else:
-            ledger = ClosedLedger()
-        attest: ClosedAttest | MemoryAttest = ClosedAttest()
     else:
-        relay = MemoryRelay()
+        relay = MemoryRelay(agent_id=agent_id, ledger=LocalLedger())
         index = MemoryIndex()
-        ledger = MemoryLedger()
-        attest = MemoryAttest()
     harness = Harness(
         agent_id=agent_id,
         private=private,
@@ -298,15 +262,11 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
         brain=brain,
         index=index,
         relay=relay,
-        ledger=ledger,
-        attest=attest,
         defer=cloud,
         ack_delay=0.0 if cloud else None,
-        care=care,
         resolve_key=resolve_key,
         llm=llm_connector(env),
     )
-    harness.evidence = evidence
     if cloud:
         harness.keys.update(_trusted_keys(env))
     return harness, plane_for(role)
@@ -350,14 +310,6 @@ def _grant_file(env: Mapping[str, str]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise CapError("SCHEMA_INVALID", "grant")
     return parsed
-
-
-def _ledger_url(env: Mapping[str, str]) -> str:
-    raw = env.get("CITY_LEDGER_URL", "").strip()
-    parsed = urlsplit(raw)
-    if parsed.scheme != "https" or not parsed.hostname or _local_url(raw):
-        raise CapError("POLICY_VIOLATION", "CITY_LEDGER_URL")
-    return raw.rstrip("/")
 
 
 def _local_url(url: str) -> bool:

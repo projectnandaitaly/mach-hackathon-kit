@@ -65,33 +65,22 @@ class DeliveryOpener(Protocol):
 class IndexView(Protocol):
     """The live Index as the agent's own caller sees it."""
 
-    async def find(self, *, role: str) -> Sequence[Any]: ...
+    async def search(self, query: str) -> Sequence[Any]: ...
 
 
 class _RelayView(Protocol):
     acks: list[tuple[str, int, str]]
     renewed: list[tuple[str, int]]
-    sent: list[tuple[str, dict[str, object], str | None]]
-
-
-class _LedgerView(Protocol):
-    calls: list[tuple[str, str]]
+    posted: list[dict[str, Any]]
 
 
 class PortCityEvidence:
-    """Reads the relay, ledger, and escalation list the harness already calls."""
+    """Reads the in-memory Relay the harness already calls. What the agent posted stands in
+    for the ``sent`` rows the live Relay records (ADR-110); an agent no longer holds,
+    remembers, or escalates outside its mailbox."""
 
-    def __init__(
-        self,
-        relay: _RelayView,
-        ledger: _LedgerView,
-        memory: dict[str, str],
-        escalations: list[str],
-    ) -> None:
+    def __init__(self, relay: _RelayView) -> None:
         self._relay = relay
-        self._ledger = ledger
-        self._memory = memory
-        self._escalations = escalations
 
     async def load(self) -> None:
         return None
@@ -106,16 +95,27 @@ class PortCityEvidence:
         return list(self._relay.renewed)
 
     def sent(self) -> list[tuple[str, dict[str, object], str | None]]:
-        return list(self._relay.sent)
+        rows: list[tuple[str, dict[str, object], str | None]] = []
+        for row in self._relay.posted:
+            body = row.get("body")
+            trace = row.get("traceparent")
+            rows.append(
+                (
+                    str(row.get("to", "")),
+                    dict(body) if isinstance(body, Mapping) else {},
+                    trace if isinstance(trace, str) else None,
+                )
+            )
+        return rows
 
     def holds(self) -> list[tuple[str, str]]:
-        return list(self._ledger.calls)
+        return []
 
     def memory(self) -> dict[str, str]:
-        return dict(self._memory)
+        return {}
 
     def escalations(self) -> list[str]:
-        return list(self._escalations)
+        return []
 
 
 class HttpCityEvidence:
@@ -207,7 +207,6 @@ class RemoteAgent:
         self._settle_wait = settle_wait
         self._business: set[str] = set()
         self._hidden = 0
-        self._escalation: str | None = None
         if signers is None:
             sender = ephemeral()
             prober = ephemeral()
@@ -241,16 +240,6 @@ class RemoteAgent:
     def sent_log(self) -> list[tuple[str, dict[str, object], str | None]]:
         return self._evidence_or_raise().sent()
 
-    def hold_log(self) -> list[tuple[str, str]]:
-        return self._evidence_or_raise().holds()
-
-    def memory_view(self) -> dict[str, str]:
-        return self._evidence_or_raise().memory()
-
-    def escalation(self) -> str | None:
-        self._evidence_or_raise()
-        return self._escalation
-
     async def stop(self) -> None:
         return None
 
@@ -283,23 +272,24 @@ class RemoteAgent:
             await asyncio.sleep(0.1)
 
     async def index_peers(self, *, service: str, district: int | None) -> list[str] | None:
+        """Every agent a search can return for ``service``: the role it belongs to and the
+        five roles a query that names no family reads as."""
+
         del district
-        role = role_for(service)
-        if self._index is None or role is None:
+        if self._index is None or role_for(service) is None:
             return None
-        found = await self._index.find(role=role)
+        found = await self._index.search(f"any agent for {service}")
         return [str(peer.agent_id) for peer in found]
 
     async def request(
         self, method: str, path: str, payload: dict[str, Any] | None = None
     ) -> HttpResult:
         before_activity = self._activity()
-        before_escalations = self._escalation_count()
         if path == "/invoke" and payload is not None and self._deliveries is not None:
             await self._deliveries(payload)
         result = await self._exchange(method, path, payload)
         if path == "/invoke":
-            await self._observe(payload, result, before_activity, before_escalations)
+            await self._observe(payload, result, before_activity)
         return result
 
     def need(
@@ -398,11 +388,6 @@ class RemoteAgent:
             + len(evidence.memory())
         )
 
-    def _escalation_count(self) -> int:
-        if self._evidence is None:
-            return 0
-        return len(self._evidence.escalations())
-
     async def _exchange(self, method: str, path: str, payload: dict[str, Any] | None) -> HttpResult:
         response = await _call(self._client, method, path, json_body=payload)
         body: dict[str, Any] = {}
@@ -419,16 +404,10 @@ class RemoteAgent:
         payload: dict[str, Any] | None,
         result: HttpResult,
         before_activity: int,
-        before_escalations: int,
     ) -> None:
         if self._evidence is not None:
             await self._evidence.load()
             grown = self._activity() - before_activity
-            after = self._evidence.escalations()
-            if len(after) > before_escalations:
-                self._escalation = after[-1]
-            else:
-                self._escalation = None
             # A 202 renew is written by the Relay after the agent replies. Poll so
             # custody.ack does not read an empty renew log on a cold first release.
             if result.status == 202 and result.body.get("status") == "received":

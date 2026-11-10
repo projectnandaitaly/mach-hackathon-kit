@@ -1,6 +1,0 @@
-agent: osp-x
-team: t05
-role: facility
-layers:
-  trust: preserve-order
-  memory: memory.v1

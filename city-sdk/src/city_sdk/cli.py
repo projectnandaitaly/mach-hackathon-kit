@@ -1,22 +1,10 @@
-"""In-process ``city run`` and ``city compare``."""
+"""In-process ``city run``: one brain turn against local stand-ins."""
 
 from __future__ import annotations
 
-from city_sdk.city import City, Need, Peer, RankFn
+from city_sdk.city import City, Message, Need, Peer
 from city_sdk.harness import Brain
-from city_sdk.layers import preserve_order
-from city_sdk.ports import MemoryAttest, MemoryIndex, MemoryLedger
-
-
-def compare(
-    peers: list[Peer],
-    plugin: RankFn,
-    *,
-    service: str = "",
-) -> tuple[list[str], list[str]]:
-    base = [peer.agent_id for peer in preserve_order(peers, service=service)]
-    swapped = [peer.agent_id for peer in plugin(list(peers), service=service)]
-    return base, swapped
+from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
 
 
 async def run_scenario(
@@ -24,34 +12,21 @@ async def run_scenario(
     peers: list[Peer],
     need: Need,
     *,
-    plugin: RankFn | None = None,
+    inbound: Message | None = None,
+    agent_id: str = "agent:local/dev",
 ) -> list[str]:
-    asked: list[str] = []
-    relay = _RecordingRelay(asked)
+    """The parties the brain said something to, in order."""
+
+    relay = MemoryRelay(agent_id=agent_id, ledger=LocalLedger())
+    message = inbound if inbound is not None else need.message
+    if message is not None:
+        relay.record(message)
     market = City(
         index=MemoryIndex(peers=list(peers)),
-        relay=relay,
-        ledger=MemoryLedger(),
-        attest=MemoryAttest(),
-        rank=preserve_order if plugin is None else plugin,
-        memory={},
-        epoch=lambda: 0,
-        traceparent=None,
+        messages=relay,
+        history=relay,
+        agent_id=agent_id,
+        inbound=message,
     )
     await brain(need, market)
-    return asked
-
-
-class _RecordingRelay:
-    def __init__(self, asked: list[str]) -> None:
-        self._asked = asked
-
-    async def send(
-        self,
-        agent_id: str,
-        body: dict[str, object],
-        *,
-        traceparent: str | None,
-    ) -> None:
-        del body, traceparent
-        self._asked.append(agent_id)
+    return [str(row["to"]) for row in relay.posted]

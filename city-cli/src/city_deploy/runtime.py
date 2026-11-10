@@ -29,12 +29,13 @@ from city_index.catalog import assert_city_invoke
 from city_deploy.agent_ids import id_name
 
 DRIVERS = frozenset({"memory", "gke", "cloudrun"})
-EGRESS = ("relay", "index", "attestation")
+# An agent pod reaches the Relay, the Index, and the LLM Gateway; the Ledger is a mailbox
+# party (ADR-110). Attestation stays a Deploy-side URL for conformance evidence.
+EGRESS = ("relay", "index", "llm")
 _URLS = (
     ("relay", "CITY_RELAY_URL", Plane.RELAY),
     ("index", "CITY_INDEX_URL", Plane.INDEX),
     ("attestation", "CITY_ATTESTATION_URL", Plane.ATTESTATION),
-    ("ledger", "CITY_LEDGER_URL", Plane.LEDGER),
 )
 _LLM_URL = ("llm", "CITY_LLM_URL")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -1094,8 +1095,6 @@ def workloads(
                                 {"name": "PORT", "value": str(AGENT_CONTAINER_PORT)},
                                 {"name": "CITY_RELAY_URL", "value": urls["relay"]},
                                 {"name": "CITY_INDEX_URL", "value": urls["index"]},
-                                {"name": "CITY_ATTESTATION_URL", "value": urls["attestation"]},
-                                {"name": "CITY_LEDGER_URL", "value": urls["ledger"]},
                                 {"name": "CITY_KEY_PATH", "value": f"{_KEY_MOUNT}/{_KEY_FILE}"},
                                 {"name": "CITY_GRANT_PATH", "value": f"{_KEY_MOUNT}/{_GRANT_FILE}"},
                                 {

@@ -37,7 +37,7 @@ def create_app(index: IndexService, *, allow_header_mutations: bool = True) -> F
         finally:
             app.state.snapshot_sync.cancel()
 
-    app = FastAPI(title="City Index", version="0.10.0", lifespan=lifespan)
+    app = FastAPI(title="City Index", version="0.11.0", lifespan=lifespan)
     app.state.index = index
 
     @app.exception_handler(CapError)
@@ -72,6 +72,14 @@ def create_app(index: IndexService, *, allow_header_mutations: bool = True) -> F
             raise CapError("SCHEMA_INVALID", "role required")
         caller = request.headers.get("X-Caller", "anonymous")
         return index.query(caller=caller, role=role, include=params.get("include"))
+
+    @app.post("/v1/agents/search")
+    async def search_agents(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"query"}:
+            raise CapError("SCHEMA_INVALID", "body is {query}")
+        caller = request.headers.get("X-Caller", "anonymous")
+        return index.search(caller=caller, query=body["query"])
 
     @app.get("/v1/agents/{agent_id:path}/card")
     async def get_card(agent_id: str) -> dict[str, Any]:

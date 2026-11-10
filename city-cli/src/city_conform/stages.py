@@ -10,10 +10,13 @@ from typing import Any, cast
 from cap.core.envelope import verify
 from cap.core.errors import CapError
 from cap.core.jcs import card_digest
+from city_sdk.city import LEDGER
 
 from city_conform.agent import Agent, HttpResult
 from city_conform.runner import Stage, Verdict, failed, inconclusive, passed, skipped
-from city_conform.world import FIRST, clinical
+from city_conform.world import FIRST
+
+_CITY_PARTIES = frozenset({LEDGER})
 
 _CARD_FIELDS = (
     "agent_id",
@@ -173,12 +176,13 @@ async def invoke_semantics(agent: Agent) -> Verdict:
         body={"service": "lab", "summary": "alarm", "is_emergency": True, "district": 8}
     )
     await agent.request("POST", "/invoke", emergency)
-    if agent.escalation() != "red_flag" or len(agent.sent_log()) != sent_before:
+    if not _escalated(agent.sent_log()[sent_before:]):
         return failed("emergency")
     listed = await _index_view(agent, service="lab", district=8)
+    asked_before = len(agent.sent_log())
     normal = agent.need(body={"service": "lab", "summary": "visit", "district": 8})
     await agent.request("POST", "/invoke", normal)
-    sent = agent.sent_log()[sent_before:]
+    sent = [row for row in agent.sent_log()[asked_before:] if row[0] not in _CITY_PARTIES]
     if listed is None:
         if len(sent) != 1 or sent[0][0] != FIRST.agent_id:
             return failed("ask")
@@ -186,6 +190,19 @@ async def invoke_semantics(agent: Agent) -> Verdict:
     if len(sent) > 1 or any(peer not in listed for peer, _body, _trace in sent):
         return failed("ask")
     return passed()
+
+
+def _escalated(rows: list[tuple[str, dict[str, object], str | None]]) -> bool:
+    """The agent stopped and told the sender ``escalate.emergency`` (ADR-110: an
+    escalation is said, not posted to Attestation)."""
+
+    if not rows:
+        return False
+    for _peer, body, _trace in rows:
+        text = body.get("text")
+        if not isinstance(text, str) or "escalate.emergency" not in text:
+            return False
+    return True
 
 
 async def _index_view(agent: Agent, *, service: str, district: int) -> list[str] | None:
@@ -227,7 +244,7 @@ async def emergency(agent: Agent) -> Verdict:
         body={"service": "lab", "summary": "red flag", "is_emergency": True, "district": 8}
     )
     await agent.request("POST", "/invoke", payload)
-    if agent.escalation() != "red_flag" or len(agent.sent_log()) != sent_before:
+    if not _escalated(agent.sent_log()[sent_before:]):
         return failed("did not stop")
     return passed()
 
@@ -247,8 +264,6 @@ async def scope(agent: Agent) -> Verdict:
         return failed("OUT_OF_SCOPE")
     if len(agent.sent_log()) != sent_before:
         return failed("continued")
-    if clinical(" ".join(agent.memory_view().values())):
-        return failed("clinical content")
     return passed()
 
 

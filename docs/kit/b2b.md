@@ -1,3 +1,3 @@
 # B2b
 
-`main` finds peers, keeps the given order, and sends the need to the first peer.
+`main` finds peers with `city.find`, keeps the order it chooses, and says the need to one of them.

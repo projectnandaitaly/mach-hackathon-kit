@@ -27,13 +27,12 @@ from city_sdk.boot import (
     prepare,
     reload_brain,
 )
-from city_sdk.city import City, Need, Peer
+from city_sdk.city import City, Message, Need, Peer
 from city_sdk.devmode import CITIZEN_SENDER, invoke_local
 from city_sdk.gateway_env import inject_team_gateway, load_team_gateway
 from city_sdk.harness import Harness
-from city_sdk.layers import preserve_order
 from city_sdk.logs import HarnessLog
-from city_sdk.ports import MemoryAttest, MemoryCare, MemoryIndex, MemoryLedger, MemoryRelay
+from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
 from city_sdk.utils.logging import configure, uvicorn_log_config
 
 from city_deploy.agent_ids import new_rid
@@ -62,35 +61,27 @@ def _local_catalogue(service: str) -> tuple[str, str, bool]:
     return ("VIS-CARD", "cardiology", True)
 
 
-_TEMPLATES = frozenset(
-    {"booking_centre", "facility", "gp", "b2b", "specialist", "family_counseling"}
-)
-_LOCAL_PEER = Peer("agent:t05/osp-x", service="lab", district=8)
-_SLUGS = {
-    "booking_centre": "booking_centre-rapido",
-    "facility": "osp-x",
-    "gp": "gp-uno",
-    "b2b": "b2b-desk",
-    "specialist": "spec-uno",
-    "family_counseling": "counseling-uno",
+# One template for every role (ADR-110). A role sets the card's role and service types.
+TEMPLATE = "agent"
+ROLE_CARDS: dict[str, tuple[str, str]] = {
+    "booking_centre": ("booking_centre", "booking_centre"),
+    "gp": ("gp", "gp"),
+    "hospital": ("facility", "hospital.physiatry"),
+    "specialist_care": ("facility", "specialist_care.cardiology"),
+    "family_counseling": ("facility", "family_counseling.gynecology"),
 }
-_TEAMS = {
-    "booking_centre": "t07",
-    "facility": "t05",
-    "gp": "t03",
-    "b2b": "t09",
-    "specialist": "t11",
-    "family_counseling": "t12",
-}
+_LOCAL_PEER = Peer("agent:t05/osp-x", service="lab", district=8, role="hospital")
+_SLUG = "agent-uno"
+_TEAM = "t07"
 
 
 def templates_root() -> Path:
     here = Path(__file__).resolve()
     packaged = here.parent / "templates"
-    if (packaged / "booking_centre").is_dir():
+    if (packaged / TEMPLATE).is_dir():
         return packaged
     for parent in here.parents:
-        if (parent / "templates" / "booking_centre").is_dir():
+        if (parent / "templates" / TEMPLATE).is_dir():
             return parent / "templates"
     raise CapError("SCHEMA_INVALID", "templates")
 
@@ -99,11 +90,11 @@ def init_project(
     root: Path,
     name: str,
     *,
-    template: str = "booking_centre",
+    role: str = "booking_centre",
     team_id: str,
     rid: Callable[[], str] | None = None,
 ) -> dict[str, str]:
-    """Scaffold ``root/<name>/`` from a starter template.
+    """Scaffold ``root/<name>/`` from the agent template, for ``role``.
 
     ``--root`` is the parent directory. The agent project always lands in a
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
@@ -112,13 +103,13 @@ def init_project(
     Team credentials stay in the user config store
     (``~/.config/city/teams/<team>/``), not inside the project.
     """
-    if template not in _TEMPLATES:
-        raise CapError("SCHEMA_INVALID", "template")
+    if role not in ROLE_CARDS:
+        raise CapError("SCHEMA_INVALID", "role")
     if re.fullmatch(r"[a-z0-9_-]+", name) is None:
         raise CapError("SCHEMA_INVALID", "name")
     if re.fullmatch(r"[a-z0-9_-]+", team_id) is None:
         raise CapError("SCHEMA_INVALID", "team")
-    source = templates_root() / template
+    source = templates_root() / TEMPLATE
     root.mkdir(parents=True, exist_ok=True)
     dest = (root / name).resolve()
     if dest.exists():
@@ -126,8 +117,8 @@ def init_project(
             raise CapError("DUPLICATE", str(dest))
     else:
         dest.mkdir(parents=True)
-    slug = _SLUGS[template]
-    placeholder = _TEAMS[template]
+    slug = _SLUG
+    placeholder = _TEAM
     for path in source.rglob("*"):
         if not path.is_file() or "__pycache__" in path.parts:
             continue
@@ -145,9 +136,14 @@ def init_project(
         target.write_text(text, encoding="utf-8")
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
+    card_role, service_type = ROLE_CARDS[role]
+    _set_yaml_field(dest / "card.yaml", "role", card_role)
+    _set_yaml_list(dest / "card.yaml", "service_types", [service_type])
+    _set_yaml_field(dest / "city.yaml", "role", card_role)
     write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
     return {
-        "template": template,
+        "template": TEMPLATE,
+        "role": role,
         "name": name,
         "team": team_id,
         "path": str(dest),
@@ -190,6 +186,25 @@ def _set_yaml_field(path: Path, key: str, value: str) -> None:
     )
 
 
+def _set_yaml_list(path: Path, key: str, values: list[str]) -> None:
+    """Replace a top-level ``key:`` block list in a flat YAML file."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    out: list[str] = []
+    skipping = False
+    for line in lines:
+        if skipping and line.startswith("  - "):
+            continue
+        skipping = False
+        if line == f"{key}:":
+            out.append(line)
+            out.extend(f"  - {value}" for value in values)
+            skipping = True
+            continue
+        out.append(line)
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
 def flat_field(text: str, key: str) -> str | None:
     prefix = key + ":"
     for line in text.splitlines():
@@ -199,6 +214,8 @@ def flat_field(text: str, key: str) -> str | None:
 
 
 async def run_local_need(root: Path) -> dict[str, Any]:
+    """One citizen message through the project brain, against local stand-ins."""
+
     city_yaml = (root / "city.yaml").read_text(encoding="utf-8")
     if flat_field(city_yaml, "brain") is not None:
         raise CapError("SCHEMA_INVALID", "brain")
@@ -208,22 +225,29 @@ async def run_local_need(root: Path) -> dict[str, Any]:
     inject_team_gateway(team_id=team, root=root)
     function = load_brain(root, BRAIN_SPEC)
     llm = llm_connector({}, team_id=team, root=root)
-    relay = MemoryRelay()
-    ledger = MemoryLedger()
+    agent_id = "agent:local/dev"
+    relay = MemoryRelay(agent_id=agent_id, ledger=LocalLedger())
+    inbound = Message(
+        type="chat",
+        sender=CITIZEN_SENDER,
+        recipient=agent_id,
+        msg_id="local-1",
+        need_id="local",
+        body={"text": "I need a visit"},
+    )
+    relay.record(inbound)
     market = City(
         index=MemoryIndex(peers=[_LOCAL_PEER]),
-        relay=relay,
-        ledger=ledger,
-        attest=MemoryAttest(),
-        rank=preserve_order,
-        memory={},
-        epoch=lambda: 0,
-        traceparent=None,
+        messages=relay,
+        history=relay,
+        agent_id=agent_id,
+        inbound=inbound,
         llm=llm,
     )
-    await function(Need(service="lab", district=8, summary="visit"), market)
-    asked = relay.sent[0][0] if relay.sent else None
-    return {"asked": asked, "holds": sum(1 for kind, _agent in ledger.calls if kind == "hold")}
+    await function(Need(summary=inbound.text, message=inbound), market)
+    said = [str(row["to"]) for row in relay.posted]
+    asked = next((to for to in said if to != CITIZEN_SENDER), None)
+    return {"asked": asked, "said": said}
 
 
 def _prepare_local_harness(root: Path) -> tuple[Harness, str | None]:
@@ -259,91 +283,50 @@ def card_service(harness: Harness) -> str:
 
 
 def seed_chat_world(harness: Harness) -> None:
-    """Peer + one slot/protocol so template brains can act without a live wave.
-
-    Family counseling offers only free-access catalogue procedures of its
-    specialty; the seed must match that card's ``service_types``, not a
-    cardiology placeholder.
-    """
+    """A peer for ``find`` and one slot for the stand-in Ledger, so a brain can act without
+    a live wave. Family counseling offers only free-access procedures of its specialty."""
     if not isinstance(harness.index, MemoryIndex):
         raise CapError("POLICY_VIOLATION", "index")
     if _LOCAL_PEER.agent_id not in {peer.agent_id for peer in harness.index.peers}:
         harness.index.peers.append(_LOCAL_PEER)
-    care = harness.care
-    if not isinstance(care, MemoryCare):
+    ledger = _local_ledger(harness)
+    if ledger is None or ledger.slots:
         return
-    world = care._world.get("world")
-    if not isinstance(world, dict):
-        world = {}
-        care._world["world"] = world
-    service = card_service(harness)
-    procedure, specialty, needs_rx = _local_catalogue(service)
-    slots = world.setdefault("slots", [])
-    if isinstance(slots, list) and not slots:
-        when = format_time(harness.clock.now() + timedelta(days=1))
-        slots.append(
-            {
-                "slot_id": "slot-local-1",
-                "doctor_id": "doc-local-1",
-                "facility": harness.agent_id,
-                "procedure": procedure,
-                "agenda_date": when,
-                "agenda_day": "mon",
-            }
-        )
-    if specialty is not None:
-        catalogue = world.setdefault("catalogue", [])
-        if isinstance(catalogue, list) and not catalogue:
-            catalogue.append(
-                {
-                    "code": procedure,
-                    "specialty": specialty,
-                    "requires_prescription": needs_rx,
-                }
-            )
-    protocols = world.setdefault("protocols", [])
-    if isinstance(protocols, list) and not protocols:
-        protocols.extend(
-            [
-                {
-                    "symptom_code": "SYM-PALPITATIONS",
-                    "procedure": "VIS-CARD",
-                    "priority": "B",
-                    "red_flags": ["chest pain", "dolore al petto"],
-                },
-                {
-                    "symptom_code": "SYM-BACK",
-                    "procedure": "VIS-FIS",
-                    "priority": "B",
-                    "red_flags": [],
-                },
-            ]
-        )
+    procedure, _specialty, _needs_rx = _local_catalogue(card_service(harness))
+    ledger.slots.append(
+        {
+            "slot_id": "slot-local-1",
+            "doctor_id": "doc-local-1",
+            "facility": harness.agent_id,
+            "procedure": procedure,
+            "agenda_date": format_time(harness.clock.now() + timedelta(days=1)),
+            "agenda_day": "mon",
+        }
+    )
 
 
 async def seed_local_rx(harness: Harness) -> str:
-    """Issue one local prescription into MemoryCare; return its number."""
-    care = harness.care
-    if not isinstance(care, MemoryCare):
-        raise CapError("POLICY_VIOLATION", "care")
-    number = f"{_LOCAL_RX_PREFIX}{care._n + 1}"
+    """Issue one prescription on the stand-in Ledger; return its number."""
+    ledger = _local_ledger(harness)
+    if ledger is None:
+        raise CapError("POLICY_VIOLATION", "ledger")
+    number = f"{_LOCAL_RX_PREFIX}{len(ledger.prescriptions) + 1}"
     procedure = _DEFAULT_PROCEDURE
-    world = care._world.get("world")
-    if isinstance(world, dict):
-        slots = world.get("slots")
-        if isinstance(slots, list) and slots and isinstance(slots[0], dict):
-            raw = slots[0].get("procedure")
-            if isinstance(raw, str) and raw:
-                procedure = raw
-    await care.issue_prescription(
-        {
-            "prescription_number": number,
-            "procedure": procedure,
-            "priority": "B",
-            "symptom_code": "SYM-PALPITATIONS",
-        }
-    )
+    if ledger.slots:
+        raw = ledger.slots[0].get("procedure")
+        if isinstance(raw, str) and raw:
+            procedure = raw
+    ledger.issue(number, procedure)
     return number
+
+
+def _local_ledger(harness: Harness) -> LocalLedger | None:
+    relay = harness.relay
+    if not isinstance(relay, MemoryRelay):
+        return None
+    if relay.ledger is None:
+        relay.ledger = LocalLedger()
+    return relay.ledger
 
 
 def chat_line_to_payload(

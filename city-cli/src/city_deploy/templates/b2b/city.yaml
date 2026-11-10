@@ -1,6 +1,0 @@
-agent: b2b-desk
-team: t09
-role: b2b
-layers:
-  trust: preserve-order
-  memory: memory.v1

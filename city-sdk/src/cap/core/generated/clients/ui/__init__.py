@@ -652,6 +652,10 @@ class Agent1(BaseModel):
         None,
         description="Latest Index visibility_log stamp for this agent (ADR-053). Omitted when the log has no entry for the agent.\n",
     )
+    name: constr(min_length=1, max_length=80) | None = Field(
+        None,
+        description="ADR-070. Display name from the pinned Index card. Omitted when the card has no usable name. A label only.\n",
+    )
 
 
 class AdminAgentList(BaseModel):

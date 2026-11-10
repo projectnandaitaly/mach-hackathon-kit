@@ -33,13 +33,14 @@ async def good_brain(need: Need, market: City) -> None:
         raise RuntimeError("application")
     if clinical(need.summary):
         raise OutOfScope()
+    inbound = market.inbound
     if need.is_emergency:
-        await market.escalate(reason="red_flag")
+        if inbound is not None:
+            await market.say(inbound.sender, "escalate.emergency reason=red_flag")
         return
-    peers = await market.find_facilities(service=need.service, district=need.district)
-    ranked = await market.rank(peers, service=need.service)
-    if ranked:
-        await market.ask(ranked[0], need)
+    peers = await market.find(f"a facility for {need.service or 'a visit'}")
+    if peers:
+        await market.say(peers[0], need.summary or "request")
 
 
 def profile_card(

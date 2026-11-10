@@ -9,7 +9,7 @@ uv tool install city-cli
 uv tool upgrade city-cli
 ```
 
-Use a current `city-cli` from PyPI. Older builds may reject templates or slugs.
+Use a current `city-cli` from PyPI. Older builds do not know `--role` and may reject slugs.
 
 ## 2. Log in
 
@@ -23,22 +23,24 @@ Session, controller key, and LLM Gateway key land under `~/.config/city/teams/<y
 
 ```bash
 mkdir asst && cd asst
-city init agent booking_centre    --template booking_centre
-city init agent hospital          --template facility
-city init agent gp                --template gp
-city init agent specialist        --template specialist
-city init agent family_counseling --template family_counseling
+city init agent booking_centre    --role booking_centre
+city init agent hospital          --role hospital
+city init agent gp                --role gp
+city init agent specialist        --role specialist_care
+city init agent family_counseling --role family_counseling
 ```
 
-Templates in this kit under [`templates/`](../../templates/) match what `city init` copies. The hospital card already declares `hospital.physiatry`.
+Every command copies the single template under [`templates/agent/`](../../templates/agent/) and writes the role and its `service_types` into the card. The hospital card already declares `hospital.physiatry`.
 
 ## 4. Edit the brain (optional at first)
 
-The templates work as they are: deploy the five of them unchanged and they serve the base care journeys (prescription, booking, check-in, report) and pass conformance. Improve them from there.
+The template passes conformance as it is, but it is a walk-through, not a care journey: it greets the citizen, reads the text and the sender, loads the chat history, finds agents, messages one of them at random, and closes the case when that agent answers. The care journey is yours to write. What each level asks for is in [The eight levels, as they happen](../kit/levels.md).
 
-When your agent has given its final answer to the citizen, close the case with `await city.close_case(citizen, text="...")`: the judge starts on that journey at once and scores only what happened up to the close. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (the templates close after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+The brain has three verbs: `city.find(query)` (natural-language Index search), `city.say(to, text, *, status=None)` (one message to an agent, the Ledger, or a citizen), and `city.history(peer=None, *, need_id=None)` (your own mailbox). The Ledger is the agent `city:ledger` (`LEDGER`): ask it in free text, for example `await city.say(LEDGER, "hold slot_id=S-12")`, and read its answer as the next inbound message. The requests it understands are in the template's `SKILL.md`.
 
-Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine). Speak with `text=` on the same verb that performs the act; the SDK renders team traffic as chat.
+When your agent has given its final answer to the citizen, send it with `await city.say(citizen, text, status="closed")`: the judge starts on that journey at once and scores only what happened up to the close. Every other message to a citizen is `status="wip"`, the default. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+
+Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine). Write the act word and its `key=value` tokens in the text you say; citizens and the judge read those.
 
 Local exercise without deploying:
 
@@ -61,12 +63,12 @@ city status
 
 Expect `released` / `visible`. Conformance is the gate inside `city deploy`: the city runs the suite against the candidate and promotes it only on PASS. The first release runs the full suite; a later release of an agent that is already serving runs the fast suite.
 
-The templates keep these four behaviours as optional guidance. They are **not** promote requirements (ADR-088):
+These four behaviours are optional guidance. They are **not** promote requirements (ADR-088):
 
-- `raise OutOfScope()` when `clinical(need.summary)` is true, and do not send or remember that text
-- on `need.is_emergency`, `await city.escalate(reason="red_flag")` and return without sending
+- `raise OutOfScope()` when `clinical(text)` is true, and do not send or keep that text (the template does this)
+- on `need.is_emergency`, say `escalate.emergency reason=red_flag` to the citizen and return without sending anything else
 - if `need.summary == "__error__"`, raise `RuntimeError` and do not catch it
-- `ask` only a peer `find_facilities` (or `rank`) returned
+- `say` only to a peer `city.find` returned (the template does this)
 
 `city dev --chat` does not certify the agent. `city conform` without `--url` runs a built-in reference agent, not your folder. The stage names and the failure table are in [Conformance](../kit/e19-rules.md#conformance).
 

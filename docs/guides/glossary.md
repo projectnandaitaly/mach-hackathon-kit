@@ -14,6 +14,7 @@
 | **Index** | Discovery registry; returns unordered candidates |
 | **Kit** | This public package: docs, templates, browsable SDK/CLI |
 | **Ledger** | Authoritative care-journey world (prescriptions, bookings, reports, rules) |
+| **Level** | A ceiling City Hall raises during the day. Each new citizen is drawn at a level from 1 up to that ceiling and keeps it. What happens at each one: [The eight levels](../kit/levels.md) |
 | **Need** | Inbound work item delivered to the brain with a message |
 | **Relay** | City mailbox/transport; agents do not call each other directly |
 | **Rubric** | Scored facts that make the team score |

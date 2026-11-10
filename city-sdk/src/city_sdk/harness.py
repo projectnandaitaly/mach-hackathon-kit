@@ -14,33 +14,12 @@ from cap.core.errors import CapError
 from cap.core.jcs import card_digest, digest
 from cap.core.keys import PrivateKey, PublicKey
 
-from city_sdk.city import (
-    AttestPort,
-    CarePort,
-    City,
-    EvidencePort,
-    IndexPort,
-    Message,
-    Need,
-    NotesPort,
-    OutOfScope,
-)
+from city_sdk.city import City, IndexPort, Message, Need, OutOfScope
 from city_sdk.journal import JournalEntry, MemoryJournal
-from city_sdk.layers import LayerRegistry
 from city_sdk.llm import LlmConnector
 from city_sdk.logs import HarnessLog
 from city_sdk.policy import PolicyStore
-from city_sdk.ports import (
-    Clock,
-    HarnessLedger,
-    HarnessRelay,
-    MemoryAttest,
-    MemoryCare,
-    MemoryIndex,
-    MemoryLedger,
-    MemoryRelay,
-    SystemClock,
-)
+from city_sdk.ports import Clock, HarnessRelay, MemoryIndex, MemoryRelay, SystemClock
 from city_sdk.utils.logging import bind
 
 Brain = Callable[[Need, City], Awaitable[None]]
@@ -89,6 +68,8 @@ def message_from(envelope: Mapping[str, Any], body: Mapping[str, Any]) -> Messag
         need_id=text("need_id"),
         conversation_id=text("conversation_id"),
         body=body,
+        recipient=text("to") or "",
+        sent_at=text("sent_at") or "",
     )
 
 
@@ -112,12 +93,9 @@ class Harness:
         clock: Clock | None = None,
         index: IndexPort | None = None,
         relay: HarnessRelay | None = None,
-        ledger: HarnessLedger | None = None,
-        attest: AttestPort | None = None,
         keys: dict[str, PublicKey] | None = None,
         defer: bool = False,
         log_per_second: int = 50,
-        care: CarePort | None = None,
         resolve_key: KeyResolver | None = None,
         ack_delay: float | None = None,
         llm: LlmConnector | None = None,
@@ -131,10 +109,9 @@ class Harness:
         self.clock: Clock = clock if clock is not None else SystemClock()
         self.index = index if index is not None else MemoryIndex()
         self.relay = relay if relay is not None else MemoryRelay()
-        self.ledger = ledger if ledger is not None else MemoryLedger()
-        self.attest = attest if attest is not None else MemoryAttest()
+        if isinstance(self.relay, MemoryRelay) and not self.relay.agent_id:
+            self.relay.agent_id = agent_id
         self.keys = {} if keys is None else keys
-        self.care: CarePort = care if care is not None else MemoryCare(clock=self.clock)
         self.resolve_key = resolve_key
         self.llm = llm
         self.defer = defer
@@ -147,10 +124,6 @@ class Harness:
         self._running_digest: dict[str, str] = {}
         self.journal = MemoryJournal()
         self.policy = PolicyStore()
-        self.layers = LayerRegistry()
-        self.memory: dict[str, str] = {}
-        self.escalations: list[str] = []
-        self.evidence: EvidencePort | None = None
         self.open: list[OpenWork] = []
         self.brain_calls = 0
         self.last_market: City | None = None
@@ -334,6 +307,8 @@ class Harness:
             )
             return 200, body
         need = need_from(envelope)
+        if isinstance(self.relay, MemoryRelay) and need.message is not None:
+            self.relay.record(need.message)
         market = self._market(trace, need.message)
         self.last_market = market
         self.brain_calls += 1
@@ -580,21 +555,12 @@ class Harness:
     def _market(self, traceparent: str | None, inbound: Message | None = None) -> City:
         return City(
             index=self.index,
-            relay=self.relay,
-            ledger=self.ledger,
-            attest=self.attest,
-            rank=self.layers.rank_plugin(),
-            memory=self.memory,
-            epoch=lambda: self.policy.epoch,
-            traceparent=traceparent,
-            escalations=self.escalations,
-            evidence=self.evidence,
-            agent_id=self.agent_id,
-            care=self.care,
             messages=self.relay,
+            history=self.relay,
+            agent_id=self.agent_id,
             inbound=inbound,
             llm=self.llm,
-            notes=self.care if isinstance(self.care, NotesPort) else None,
+            traceparent=traceparent,
         )
 
     def _remember(

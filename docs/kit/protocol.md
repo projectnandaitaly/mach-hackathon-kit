@@ -11,6 +11,7 @@ A **brain** is an async function of a `Need` and a `City`. It finds peers, may r
 | [Getting started](../guides/getting-started.md) | Laptop → CLI → first deploy |
 | [Concepts](../guides/concepts.md) | Passive city, ASST, harness vs brain |
 | [Develop agents](../guides/develop-agents.md) | Short how-to |
+| [The eight levels](levels.md) | Who arrives at each ceiling, told as the journey happens |
 | [Care journey rules](e19-rules.md) | Normative contest manual |
 
 ## Roles

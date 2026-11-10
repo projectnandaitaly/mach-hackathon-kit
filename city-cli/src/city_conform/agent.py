@@ -12,6 +12,7 @@ from cap.core.keys import PrivateKey, PublicKey
 from cap.core.timeutil import format_time
 from city_sdk.app import create_app
 from city_sdk.harness import Harness
+from city_sdk.ports import MemoryRelay
 from httpx import ASGITransport, AsyncClient
 
 Sender = tuple[str, PrivateKey]
@@ -45,12 +46,6 @@ class Agent(Protocol):
     def renew_log(self) -> list[tuple[str, int]]: ...
 
     def sent_log(self) -> list[tuple[str, dict[str, object], str | None]]: ...
-
-    def hold_log(self) -> list[tuple[str, str]]: ...
-
-    def memory_view(self) -> dict[str, str]: ...
-
-    def escalation(self) -> str | None: ...
 
     async def stop(self) -> None: ...
 
@@ -123,19 +118,10 @@ class LiveAgent:
         return list(self.harness.relay.renewed)
 
     def sent_log(self) -> list[tuple[str, dict[str, object], str | None]]:
-        return list(self.harness.relay.sent)
-
-    def hold_log(self) -> list[tuple[str, str]]:
-        return list(self.harness.ledger.calls)
-
-    def memory_view(self) -> dict[str, str]:
-        return dict(self.harness.memory)
-
-    def escalation(self) -> str | None:
-        market = self.harness.last_market
-        if market is None:
-            return None
-        return market.escalated
+        relay = self.harness.relay
+        if not isinstance(relay, MemoryRelay):
+            return []
+        return [(str(row["to"]), dict(row["body"]), row.get("traceparent")) for row in relay.posted]
 
     async def stop(self) -> None:
         await self.harness.shutdown()

@@ -22,6 +22,7 @@ from city_index.families import FAMILIES, family_of
 from city_index.ports import Clock, EventPublisher, SystemClock
 from city_index.query import cache_key, latest_per_team, matches, shuffle, summary
 from city_index.reputation import NoReputation, ReputationPort
+from city_index.search import Resolver, families_for, ledger_row
 from city_index.visibility import TEAM_RESTORE
 from city_index.watch import WatchHub
 
@@ -54,8 +55,10 @@ class IndexService:
         publisher: EventPublisher | None = None,
         watch: WatchHub | None = None,
         reputation: ReputationPort | None = None,
+        resolver: Resolver | None = None,
     ) -> None:
         self.catalog = catalog or Catalog()
+        self.resolver = resolver
         self.reputation: ReputationPort = reputation or NoReputation()
         self.cache: QueryCachePort = cache if cache is not None else QueryCache()
         self.clock = clock or SystemClock()
@@ -316,6 +319,22 @@ class IndexService:
         ]
         self.cache.put(key, payload, now=now)
         return {"agents": payload}
+
+    def search(self, *, caller: str, query: object) -> dict[str, Any]:
+        """ADR-110: the families the text names, and for each the rows of ``query``."""
+
+        families = families_for(query, self.resolver)
+        agents: list[dict[str, Any]] = []
+        for family in families:
+            if family == "ledger":
+                agents.append(ledger_row())
+            else:
+                agents.extend(self.query(caller=caller, role=family)["agents"])
+        log.info(
+            "index.search",
+            extra={"agent_id": caller, "msg_id": None, "need_id": None, "families": families},
+        )
+        return {"families": families, "agents": agents}
 
     def advance(self, delta: timedelta) -> None:
         if isinstance(self.clock, FixedClock):

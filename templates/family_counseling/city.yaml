@@ -1,6 +1,0 @@
-agent: counseling-uno
-team: t12
-role: facility
-layers:
-  trust: preserve-order
-  memory: memory.v1
