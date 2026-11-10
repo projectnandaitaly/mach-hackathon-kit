@@ -10,10 +10,11 @@ import json
 import logging
 import os
 import re
+import socket
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import AbstractAsyncContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from secrets import token_hex, token_urlsafe
@@ -37,6 +38,7 @@ from city_deploy.clock import Clock, SystemClock
 from city_deploy.conform import ReferenceSuite, Suite
 from city_deploy.errors import Conflict, QuotaExceeded
 from city_deploy.image import Recipe, SourceFile, parse_dockerfile
+from city_deploy.pipeline import NoLocks, SharedLocks, SharedRollouts
 from city_deploy.quota import (
     MAX_IMAGE_BYTES,
     assert_build,
@@ -207,12 +209,25 @@ class DeployService:
         self.agent_ids = AgentIds()
         # ADR-109: with rows, sessions, logins, ids, keys and deployments live in SQL.
         self.shared: SharedState | None = None
+        self.rollouts = RolloutGate.from_env()
+        self.locks: NoLocks | SharedLocks = NoLocks()
+        self._shared_rollouts: SharedRollouts | None = None
+        # T12: placement book rows as this instance last read or wrote them.
+        self._book_seen: dict[str, str] = {}
+        self._pipelines: dict[str, asyncio.Task[Any]] = {}
+        self._lease_loop: asyncio.Task[None] | None = None
+        self.renew_every = 10.0
+        self.sweep_every = 15.0
         if rows is not None:
-            self.shared = SharedState(rows, self.clock)
+            instance = f"{socket.gethostname()}-{uuid4().hex[:8]}"
+            self.shared = SharedState(rows, self.clock, instance)
             self.agent_ids = SharedAgentIds(rows)
             self.ring = SharedKeyRing(rows)
+            self.locks = SharedLocks(rows, self.clock, instance)
+            self._shared_rollouts = SharedRollouts(
+                rows, self.shared.deployments, self.clock, self.rollouts
+            )
         self._flusher: asyncio.Task[None] | None = None
-        self.rollouts = RolloutGate.from_env()
         # One writer keeps checkpoints in order: an older snapshot never lands last.
         self._checkpoints = ThreadPoolExecutor(max_workers=1, thread_name_prefix="checkpoint")
         # Callers that arrive during a write share the next one, so writes follow the
@@ -243,7 +258,8 @@ class DeployService:
     async def checkpoint(self) -> None:
         """Write changed deployment rows, then the snapshot, off the event loop.
 
-        On return, a write that started after this call has landed.
+        On return, a write that started after this call has landed. With rows the
+        snapshot is not written: instances would overwrite each other's book.
         """
 
         self._asked += 1
@@ -253,7 +269,7 @@ class DeployService:
                 return
             reached = self._asked
             await self._flush_rows()
-            if self.state is not None:
+            if self.state is not None and self.shared is None:
                 body = self.snapshot()
                 await asyncio.get_running_loop().run_in_executor(
                     self._checkpoints, self.state.checkpoint, body
@@ -271,11 +287,45 @@ class DeployService:
             return
         deployments = self.shared.deployments
         changes = deployments.changes()
-        if changes:
-            await asyncio.get_running_loop().run_in_executor(
-                self._checkpoints, deployments.write, changes
-            )
-        deployments.settle(changes)
+        book = self._book_changes()
+        loop = asyncio.get_running_loop()
+        refused: list[str] = []
+        if changes or book:
+            refused = await loop.run_in_executor(self._checkpoints, self._write_rows, changes, book)
+        for agent_id, _body, text in book:
+            if text is None:
+                self._book_seen.pop(agent_id, None)
+            else:
+                self._book_seen[agent_id] = text
+        released = deployments.settle(changes, refused)
+        self._stop_lost(refused)
+        if released:
+            await loop.run_in_executor(self._checkpoints, deployments.release, released)
+
+    def _write_rows(
+        self,
+        changes: list[Any],
+        book: list[tuple[str, dict[str, object] | None, str | None]],
+    ) -> list[str]:
+        assert self.shared is not None
+        refused = self.shared.deployments.write(changes)
+        rows = self.shared.rows
+        now = self.now()
+        for agent_id, body, _written in book:
+            if body is None:
+                rows.drop_placement(agent_id)
+            else:
+                rows.put_placement(agent_id, body, now)
+        return refused
+
+    def _stop_lost(self, deployment_ids: list[str]) -> None:
+        """Another instance owns these pipelines now: stop ours before it touches more."""
+
+        for deployment_id in deployment_ids:
+            task = self._pipelines.pop(deployment_id, None)
+            if task is not None and not task.done():
+                _LOG.warning("deploy pipeline lease lost", extra={"deployment_id": deployment_id})
+                task.cancel()
 
     def _start_flusher(self) -> None:
         """While pipelines run here, other instances see their progress within a second."""
@@ -294,11 +344,92 @@ class DeployService:
                 _LOG.exception("deployment rows not written")
 
     def fail_interrupted(self) -> int:
-        """SQL store, one instance: pipelines that were running before a restart are gone."""
+        """Snapshot store only. With rows, the sweeper resumes what a stopped instance held."""
+
+        return 0
+
+    # T12: leases, renewal, and the sweeper.
+
+    def start_leases(self) -> None:
+        if self.shared is None or (self._lease_loop is not None and not self._lease_loop.done()):
+            return
+        self._lease_loop = asyncio.create_task(self._lease_forever())
+
+    async def stop_leases(self) -> None:
+        task, self._lease_loop = self._lease_loop, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _lease_forever(self) -> None:
+        loop = asyncio.get_running_loop()
+        next_sweep = loop.time()
+        while True:
+            try:
+                await self.renew_leases()
+                if loop.time() >= next_sweep:
+                    await self.sweep()
+                    next_sweep = loop.time() + self.sweep_every
+            except Exception:
+                _LOG.exception("deploy leases not renewed")
+            await asyncio.sleep(self.renew_every)
+
+    async def renew_leases(self) -> None:
+        """Renew this instance's leases and locks; stop pipelines whose lease is gone."""
 
         if self.shared is None:
-            return 0
-        return self.shared.deployments.fail_interrupted(interrupted)
+            return
+        deployments = self.shared.deployments
+        held = deployments.leases()
+        locks = self.locks.held()
+        lost = await asyncio.to_thread(self._renew, held, locks)
+        if lost:
+            deployments.lose(lost)
+            self._stop_lost(lost)
+
+    def _renew(self, held: list[tuple[str, int]], locks: list[tuple[str, str]]) -> list[str]:
+        assert self.shared is not None
+        self.locks.renew(locks)
+        return self.shared.deployments.renew(held)
+
+    async def sweep(self) -> list[str]:
+        """Claim pipelines whose owner stopped renewing, and carry each one on here."""
+
+        if self.shared is None:
+            return []
+        deployments = self.shared.deployments
+        found = await asyncio.to_thread(deployments.sweepable)
+        resumed: list[str] = []
+        for deployment_id in found:
+            deployment = await asyncio.to_thread(deployments.pipeline_row, deployment_id)
+            if deployment is None or deployments.is_running(deployment_id):
+                continue
+            if not deployments.claim(deployment):
+                continue
+            _LOG.info(
+                "deploy pipeline resumed",
+                extra={"agent_id": deployment.agent_id, "deployment_id": deployment_id},
+            )
+            self._resume(deployment)
+            resumed.append(deployment_id)
+        if resumed:
+            await self.checkpoint()
+        return resumed
+
+    def _resume(self, deployment: Deployment) -> None:
+        if deployment.image_digest is None or deployment.status == "building":
+            # The uploaded source lived in the stopped instance's memory.
+            self._refuse(deployment, "ERROR", "platform error", RESTARTED_BUILD)
+            return
+        self._fresh_book(deployment.agent_id)
+        job = self._held(deployment, self._resumed(deployment))
+        task = asyncio.create_task(self._background(deployment, job))
+        self._jobs.add(task)
+        task.add_done_callback(self._jobs.discard)
+
+    async def _resumed(self, deployment: Deployment) -> dict[str, Any]:
+        await self._offload(self._adopt, deployment.agent_id)
+        return await self._release_phases(deployment)
 
     def _team_llm_key(self, team_id: str) -> str | None:
         """The team's Gateway key for its pods. Do not log the result."""
@@ -518,7 +649,10 @@ class DeployService:
     async def mint_agent_key_async(self, token: str, agent_id: str) -> dict[str, str]:
         """``mint_agent_key`` with the Secret Manager write off the event loop."""
 
-        async with self._minting.setdefault(agent_id, asyncio.Lock()):
+        async with (
+            self._minting.setdefault(agent_id, asyncio.Lock()),
+            self.locks.hold(f"mint:{agent_id}", exclusive=True, wait=LOCK_WAIT),
+        ):
             current = self._current_key(token, agent_id)
             if current is not None:
                 return current
@@ -647,6 +781,9 @@ class DeployService:
             deployment.status = "failed"
             deployment.outcome = "FAIL"
             raise
+        if self.shared is not None and not self.shared.deployments.claim(deployment):
+            return deployment.view()
+        await self._fresh_placement(deployment.agent_id)
         deployment.status = "building"
         job = self._held(
             deployment, self._pipeline(deployment, dockerfile, pinned, recipe, files or {})
@@ -670,9 +807,14 @@ class DeployService:
         self._start_flusher()
 
         async def run() -> dict[str, Any]:
+            task = asyncio.current_task()
+            if task is not None:
+                self._pipelines[deployment.deployment_id] = task
             try:
                 return await job
             finally:
+                if self._pipelines.get(deployment.deployment_id) is task:
+                    self._pipelines.pop(deployment.deployment_id, None)
                 deployments.finished(deployment)
 
         return run()
@@ -759,12 +901,27 @@ class DeployService:
         deployment.sbom_id = "sbom:" + digest.rsplit(":", 1)[-1][:12]
         deployment.base_image = "city-sdk"
         deployment.status = "conformance"
+        return await self._release_phases(deployment)
+
+    async def _release_phases(self, deployment: Deployment) -> dict[str, Any]:
+        """Rollout, conformance, promote. A resumed pipeline starts here again."""
+
+        team = self.locks.hold(f"team:{deployment.team_id}", exclusive=False)
         if not self.runtime.remote:
-            return await self._roll_and_release(deployment)
+            async with team:
+                return await self._roll_and_release(deployment)
         deployment.step = "rollout"
-        async with self.rollouts.slot(deployment.team_id, lambda ahead: _queued(deployment, ahead)):
+        async with self._rollout_slot(deployment), team:
             deployment.detail = None
             return await self._roll_and_release(deployment)
+
+    def _rollout_slot(self, deployment: Deployment) -> AbstractAsyncContextManager[None]:
+        def position(ahead: int) -> None:
+            _queued(deployment, ahead)
+
+        if self._shared_rollouts is not None:
+            return self._shared_rollouts.slot(deployment.deployment_id, position)
+        return self.rollouts.slot(deployment.team_id, position)
 
     async def _roll_and_release(self, deployment: Deployment) -> dict[str, Any]:
         profile = self._profile(deployment.agent_id, deployment.version)
@@ -876,6 +1033,7 @@ class DeployService:
         version: str | None,
     ) -> dict[str, Any]:
         self._session(token)
+        await self._fresh_placement(agent_id)
         target = self._rollback_target(agent_id, version)
         if target is None:
             raise Conflict("no certified revision")
@@ -900,7 +1058,9 @@ class DeployService:
             if self.owner_of(agent_id) != session.team_id:
                 raise CapError("GRANT_PERMISSION_DENIED", "team")
         self._refuse_live_wave()
-        return await self._erase(agent_id)
+        owner = self.owner_of(agent_id)
+        async with self.locks.hold(f"team:{owner or agent_id}", exclusive=True, wait=LOCK_WAIT):
+            return await self._erase(agent_id)
 
     async def _erase(self, agent_id: str) -> dict[str, Any]:
         owner = self.owner_of(agent_id)
@@ -916,6 +1076,10 @@ class DeployService:
         self.runtime.scales.pop(agent_id, None)
         self.runtime.drained.discard(agent_id)
         self.runtime.smoked.discard(agent_id)
+        self.runtime.egress.pop(agent_id, None)
+        if self.shared is not None:
+            self.shared.rows.drop_placement(agent_id)
+            self._book_seen.pop(agent_id, None)
         names = self._take_secret_names(agent_id)
         await self._offload(self.secrets.forget_agent, agent_id, names)
         if self.shared is not None:
@@ -932,10 +1096,19 @@ class DeployService:
 
     async def purge_team(self, team_id: str, *, dry_run: bool) -> dict[str, Any]:
         """ADR-050: retire every agent of the team, then drop its namespace, secrets, key,
-        and sessions. Each step skips what is already gone, so a second call resumes."""
+        and sessions. Each step skips what is already gone, so a second call resumes.
+
+        With rows, the purge waits for the team's running rollouts on every instance and
+        holds new ones back until it ends."""
 
         if not _TEAM_SLUG.fullmatch(team_id):
             raise CapError("SCHEMA_INVALID", "team_id")
+        if dry_run:
+            return await self._purge(team_id, dry_run=True)
+        async with self.locks.hold(f"team:{team_id}", exclusive=True, wait=LOCK_WAIT):
+            return await self._purge(team_id, dry_run=False)
+
+    async def _purge(self, team_id: str, *, dry_run: bool) -> dict[str, Any]:
         owned = sorted(
             set(self.agent_ids.of_team(team_id).values())
             | {
@@ -988,6 +1161,7 @@ class DeployService:
 
     def status(self, token: str, agent_id: str) -> dict[str, Any]:
         session = self._session(token)
+        self._fresh_book(agent_id)
         record = self._existing(agent_id)
         serving = self.runtime.serving(agent_id)
         scale = self.runtime.scales.get(agent_id)
@@ -1072,6 +1246,8 @@ class DeployService:
             max_replicas=max_replicas,
             concurrency=concurrency,
         )
+        if self._fresh_book(agent_id):
+            self._adopt(agent_id)
         self.runtime.scales[agent_id] = Scale(min_replicas, max_replicas, concurrency)
         return {
             "agent_id": agent_id,
@@ -1173,6 +1349,7 @@ class DeployService:
 
     def compliance(self, token: str, agent_id: str) -> dict[str, Any]:
         self._session(token)
+        self._fresh_book(agent_id)
         serving = self.runtime.serving(agent_id)
         if serving is None:
             raise CapError("TARGET_NOT_VISIBLE", agent_id)
@@ -1619,8 +1796,71 @@ class DeployService:
             "agent_ids": self.agent_ids.blob(),
         }
 
+    def import_snapshot(self, snapshot: Mapping[str, object]) -> dict[str, int]:
+        """T15 cutover: copy a ``deploy_state`` snapshot into empty rows, once.
+
+        Rows that already hold deployments or a placement book are left alone, so a second
+        instance starting on the same rows imports nothing. Pipelines that were running
+        are failed as a restart fails them; device logins are short-lived and not copied.
+        """
+
+        if self.shared is None:
+            raise CapError("POLICY_VIOLATION", "import needs CITY_DEPLOY_STORE=sql")
+        rows = self.shared.rows
+        if rows.all_deployments() or rows.placements():
+            return {}
+        counts = {"deployments": 0, "sessions": 0, "agent_ids": 0, "placements": 0}
+        for deployment in _deployments(snapshot.get("deployments") or {}).values():
+            if rows.deployment(deployment.deployment_id) is None:
+                self.shared.deployments.add(deployment)
+                counts["deployments"] += 1
+        for token, session in _sessions(snapshot.get("sessions") or {}).items():
+            self.shared.put_session(token, session)
+            counts["sessions"] += 1
+        ids = AgentIds()
+        ids.load(snapshot.get("agent_ids"))
+        for (team_id, family), agent_id in sorted(ids.pairs.items()):
+            rows.mint_agent_id(team_id, family, agent_id)
+            counts["agent_ids"] += 1
+        for agent_id in sorted(ids.retired):
+            if rows.owner_of(agent_id) is None:
+                # Retired ids keep no live pair; the row only blocks reuse.
+                rows.mint_agent_id("", agent_id, agent_id)
+            rows.retire_agent_id(agent_id)
+            counts["agent_ids"] += 1
+        raw_names = snapshot.get("secret_names")
+        for agent_id, names in raw_names.items() if isinstance(raw_names, Mapping) else []:
+            for name in _texts(names):
+                rows.add_secret_name(str(agent_id), name)
+        # The snapshot's audit has no instants; the rows record the import time, in order.
+        for row in _audit(snapshot.get("audit") or []):
+            rows.audit(row.get("message", ""), row.get("agent_id", ""), self.now())
+        raw_book = snapshot.get("runtime")
+        if raw_book is not None:
+            book = _book(raw_book)
+            with self._book_held():
+                _load_book(self.runtime, book)
+                agents = set(book.revisions) | set(book.scales) | book.drained | book.smoked
+                for agent_id in sorted(agents | set(book.egress)):
+                    body = _agent_book(self.runtime, agent_id)
+                    if body is not None:
+                        rows.put_placement(agent_id, body, self.now())
+                        self._book_seen[agent_id] = _canonical_json(body)
+                        counts["placements"] += 1
+        return counts
+
     def restore(self, snapshot: Mapping[str, object]) -> None:
         if self.shared is not None:
+            placements = self.shared.rows.placements()
+            if placements:
+                with self._book_held():
+                    for agent_id, body in placements.items():
+                        self._load_placement(agent_id, body)
+                for agent_id in placements:
+                    self._adopt(agent_id)
+                return
+            # Cutover: the first instance on rows starts from the snapshot's book and
+            # writes it to deploy_placements at its first checkpoint.
             raw = snapshot.get("runtime")
             self._restore_book(None if raw is None else _book(raw))
             return
@@ -1641,6 +1881,66 @@ class DeployService:
         }
         self.agent_ids.load(snapshot.get("agent_ids"))
         self._restore_book(book)
+
+    # T12: with rows, each agent's placement book is one deploy_placements row.
+
+    def _fresh_book(self, agent_id: str) -> bool:
+        """Read the agent's book row before acting on it. True when rows are in use."""
+
+        if self.shared is None:
+            return False
+        body = self.shared.rows.placement(agent_id)
+        with self._book_held():
+            local = _agent_book(self.runtime, agent_id)
+            unwritten = self._book_seen.get(agent_id) != (
+                None if local is None else _canonical_json(local)
+            )
+            # A pipeline here, or a change not yet written, is newer than the row.
+            if unwritten or self.shared.deployments.agent_busy(agent_id):
+                return True
+            self._load_placement(agent_id, body)
+        return True
+
+    async def _fresh_placement(self, agent_id: str) -> None:
+        if self.shared is None:
+            return
+        await self._offload(self._fresh_book, agent_id)
+        await self._offload(self._adopt, agent_id)
+
+    def _adopt(self, agent_id: str) -> None:
+        adopt = getattr(self.runtime, "adopt", None)
+        if callable(adopt) and agent_id in self.runtime.revisions:
+            adopt(agent_id)
+
+    def _load_placement(self, agent_id: str, body: Mapping[str, object] | None) -> None:
+        _load_agent_book(self.runtime, agent_id, body)
+        if body is None:
+            self._book_seen.pop(agent_id, None)
+        else:
+            self._book_seen[agent_id] = _canonical_json(_agent_book(self.runtime, agent_id))
+
+    def _book_changes(self) -> list[tuple[str, dict[str, object] | None, str | None]]:
+        """Book rows this instance changed since it last read or wrote them."""
+
+        if self.shared is None:
+            return []
+        runtime = self.runtime
+        found: list[tuple[str, dict[str, object] | None, str | None]] = []
+        with self._book_held():
+            agents = (
+                set(runtime.revisions)
+                | set(runtime.scales)
+                | set(runtime.drained)
+                | set(runtime.smoked)
+                | set(runtime.egress)
+                | set(self._book_seen)
+            )
+            for agent_id in sorted(agents):
+                body = _agent_book(runtime, agent_id)
+                text = None if body is None else _canonical_json(body)
+                if self._book_seen.get(agent_id) != text:
+                    found.append((agent_id, body, text))
+        return found
 
     def _restore_book(self, book: _Book | None) -> None:
         """The placement book stays in the snapshot until pipelines take leases (T12)."""
@@ -1742,6 +2042,81 @@ def _book_blob(runtime: Runtime) -> dict[str, object]:
         "smoked": sorted(runtime.smoked),
         "egress": {agent_id: list(planes) for agent_id, planes in runtime.egress.items()},
     }
+
+
+def _revision_blob(row: Revision) -> dict[str, object]:
+    return {
+        "version": row.version,
+        "card": row.card,
+        "image_digest": row.image_digest,
+        "traffic": row.traffic,
+        "certified": row.certified,
+    }
+
+
+def _agent_book(runtime: Runtime, agent_id: str) -> dict[str, object] | None:
+    """One agent's share of the placement book: the body of its deploy_placements row."""
+
+    revisions = runtime.revisions.get(agent_id)
+    scale = runtime.scales.get(agent_id)
+    egress = runtime.egress.get(agent_id)
+    drained = agent_id in runtime.drained
+    smoked = agent_id in runtime.smoked
+    if not revisions and scale is None and egress is None and not drained and not smoked:
+        return None
+    return {
+        "revisions": [_revision_blob(row) for row in revisions or []],
+        "scale": None
+        if scale is None
+        else {
+            "min": scale.min_replicas,
+            "max": scale.max_replicas,
+            "concurrency": scale.concurrency,
+        },
+        "drained": drained,
+        "smoked": smoked,
+        "egress": None if egress is None else list(egress),
+    }
+
+
+def _load_agent_book(runtime: Runtime, agent_id: str, body: Mapping[str, object] | None) -> None:
+    """Replace one agent's book entries. Like ``_load_book``, this applies nothing."""
+
+    runtime.revisions.pop(agent_id, None)
+    dict.pop(runtime.scales, agent_id, None)
+    set.discard(runtime.drained, agent_id)
+    runtime.smoked.discard(agent_id)
+    runtime.egress.pop(agent_id, None)
+    if body is None:
+        return
+    rows = body.get("revisions")
+    if not isinstance(rows, list):
+        raise CapError("SCHEMA_INVALID", "revisions")
+    if rows:
+        runtime.revisions[agent_id] = [_revision(row) for row in rows]
+    raw_scale = body.get("scale")
+    if raw_scale is not None:
+        scale = _object_map(raw_scale, "scale")
+        dict.__setitem__(
+            runtime.scales,
+            agent_id,
+            Scale(
+                _count(scale.get("min")),
+                _count(scale.get("max")),
+                _count(scale.get("concurrency")),
+            ),
+        )
+    if body.get("drained") is True:
+        set.add(runtime.drained, agent_id)
+    if body.get("smoked") is True:
+        runtime.smoked.add(agent_id)
+    egress = body.get("egress")
+    if egress is not None:
+        runtime.egress[agent_id] = tuple(_texts(egress))
+
+
+def _canonical_json(body: Mapping[str, object] | None) -> str:
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _book(value: object) -> _Book:
@@ -1859,6 +2234,11 @@ def _deployments(value: object) -> dict[str, Deployment]:
         if row.outcome is None and row.status in {"building", "conformance"}:
             interrupted(row)
     return found
+
+
+RESTARTED_BUILD = "deploy restarted during the build; run city deploy again"
+# How long a purge, delete, or key mint waits for the team or agent before a 409.
+LOCK_WAIT = 120.0
 
 
 def interrupted(row: Deployment) -> None:

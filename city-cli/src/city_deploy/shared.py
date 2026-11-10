@@ -5,7 +5,8 @@ dictionaries and the ``deploy_state`` checkpoint.
 
 A deployment that this instance is changing stays in process only until the request's
 checkpoint, or while its pipeline runs here, and is written back on every checkpoint.
-Writes carry fence 0 until pipelines take a lease (T12), so until then one instance runs.
+A pipeline runs under a fenced lease on its row (T12). Every write names the fence this
+instance last saw, so an instance whose lease was taken over writes nothing.
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ from city_deploy.secrets import OVERLAP, KeyRing
 STORES = ("snapshot", "sql")
 SESSION_TTL = timedelta(days=30)
 DEVICE_TTL = timedelta(minutes=15)
+# The owner renews every 10 s; a lease not renewed for 45 s is free for another instance.
+LEASE = timedelta(seconds=45)
+# Phases with a pipeline behind them. Another instance resumes these after the lease expires.
+PIPELINE_PHASES = frozenset({"building", "conformance"})
 
 
 def deploy_store_kind(environ: Mapping[str, str]) -> str:
@@ -53,6 +58,8 @@ class DeploymentRowLike(Protocol):
     def phase(self) -> str: ...
     @property
     def body(self) -> dict[str, Any]: ...
+    @property
+    def fence(self) -> int: ...
 
 
 class DeviceRowLike(Protocol):
@@ -106,7 +113,32 @@ class DeployRows(Protocol):
         body: Mapping[str, Any],
         now: datetime,
     ) -> bool: ...
+    def claim(
+        self, deployment_id: str, holder: str, now: datetime, until: datetime
+    ) -> int | None: ...
+    def renew(self, deployment_id: str, holder: str, fence: int, until: datetime) -> bool: ...
+    def release(self, deployment_id: str, holder: str, fence: int) -> bool: ...
+    def claimable(self, now: datetime) -> list[str]: ...
+    def admit(
+        self,
+        deployment_id: str,
+        fence: int,
+        *,
+        limit: int,
+        per_team: int,
+        now: datetime,
+    ) -> int | None: ...
+    def leave(self, deployment_id: str, fence: int) -> bool: ...
+    def lock(
+        self, name: str, holder: str, *, exclusive: bool, now: datetime, until: datetime
+    ) -> bool: ...
+    def renew_lock(self, name: str, holder: str, until: datetime) -> bool: ...
+    def unlock(self, name: str, holder: str) -> bool: ...
     def drop_agent_deployments(self, agent_id: str) -> int: ...
+    def put_placement(self, agent_id: str, body: Mapping[str, Any], now: datetime) -> None: ...
+    def placement(self, agent_id: str) -> dict[str, Any] | None: ...
+    def placements(self) -> dict[str, dict[str, Any]]: ...
+    def drop_placement(self, agent_id: str) -> int: ...
     def mint_agent_id(self, team_id: str, family: str, candidate: str) -> str: ...
     def agent_ids_of(self, team_id: str) -> dict[str, str]: ...
     def owner_of(self, agent_id: str) -> str | None: ...
@@ -138,17 +170,22 @@ class _Write:
     phase: str
     body: dict[str, object]
     text: str
+    fence: int
 
 
 class SharedDeployments:
     """Deployment rows, with the ones this instance is changing held in process."""
 
-    def __init__(self, rows: DeployRows, clock: Clock) -> None:
+    def __init__(self, rows: DeployRows, clock: Clock, holder: str) -> None:
         self._rows = rows
         self._clock = clock
+        self.holder = holder
         self._live: dict[str, Deployment] = {}
         self._written: dict[str, str] = {}
         self._running: set[str] = set()
+        # The fence each held row had when read here; a claim replaces it.
+        self._fences: dict[str, int] = {}
+        self._leased: set[str] = set()
 
     def add(self, deployment: Deployment) -> None:
         body = deployment_blob(deployment)
@@ -177,6 +214,7 @@ class SharedDeployments:
         if hold:
             self._live[deployment_id] = found
             self._written[deployment_id] = _canonical(row.body)
+            self._fences[deployment_id] = row.fence
         return found
 
     def team(self, team_id: str) -> list[Deployment]:
@@ -192,9 +230,68 @@ class SharedDeployments:
     def drop_agent(self, agent_id: str) -> None:
         self._rows.drop_agent_deployments(agent_id)
         for deployment_id in [k for k, v in self._live.items() if v.agent_id == agent_id]:
-            self._live.pop(deployment_id, None)
-            self._written.pop(deployment_id, None)
-            self._running.discard(deployment_id)
+            self._forget(deployment_id)
+
+    def _forget(self, deployment_id: str) -> None:
+        self._live.pop(deployment_id, None)
+        self._written.pop(deployment_id, None)
+        self._running.discard(deployment_id)
+        self._fences.pop(deployment_id, None)
+        self._leased.discard(deployment_id)
+
+    # Leases.
+
+    def claim(self, deployment: Deployment) -> bool:
+        """Take the pipeline lease. False when another instance holds a live one."""
+
+        now = self._clock.now()
+        fence = self._rows.claim(deployment.deployment_id, self.holder, now, now + LEASE)
+        if fence is None:
+            return False
+        self._live[deployment.deployment_id] = deployment
+        self._written.setdefault(deployment.deployment_id, "")
+        self._fences[deployment.deployment_id] = fence
+        self._leased.add(deployment.deployment_id)
+        return True
+
+    def fence(self, deployment_id: str) -> int:
+        return self._fences.get(deployment_id, 0)
+
+    def leases(self) -> list[tuple[str, int]]:
+        """Read on the event loop; renewed off it."""
+
+        return [(item, self._fences.get(item, 0)) for item in sorted(self._leased)]
+
+    def renew(self, leases: list[tuple[str, int]]) -> list[str]:
+        """The deployments whose lease another instance took. Runs off the event loop."""
+
+        until = self._clock.now() + LEASE
+        return [
+            item for item, fence in leases if not self._rows.renew(item, self.holder, fence, until)
+        ]
+
+    def lose(self, deployment_ids: list[str]) -> None:
+        for deployment_id in deployment_ids:
+            self._forget(deployment_id)
+
+    def release(self, leases: list[tuple[str, int]]) -> None:
+        for deployment_id, fence in leases:
+            self._rows.release(deployment_id, self.holder, fence)
+
+    def sweepable(self) -> list[str]:
+        """Open pipelines with no live lease that no pipeline here is running."""
+
+        return [
+            item for item in self._rows.claimable(self._clock.now()) if item not in self._running
+        ]
+
+    def pipeline_row(self, deployment_id: str) -> Deployment | None:
+        row = self._rows.deployment(deployment_id)
+        if row is None or row.phase not in PIPELINE_PHASES:
+            return None
+        return deployment_from(row.body)
+
+    # Pipelines and checkpoints.
 
     def running(self, deployment: Deployment) -> None:
         self._live[deployment.deployment_id] = deployment
@@ -202,6 +299,14 @@ class SharedDeployments:
 
     def finished(self, deployment: Deployment) -> None:
         self._running.discard(deployment.deployment_id)
+
+    def is_running(self, deployment_id: str) -> bool:
+        return deployment_id in self._running
+
+    def agent_busy(self, agent_id: str) -> bool:
+        """A pipeline here is changing this agent's placement book."""
+
+        return any(self._live[item].agent_id == agent_id for item in self._running)
 
     def changes(self) -> list[_Write]:
         """What changed since the last write. Read on the event loop, written off it."""
@@ -211,61 +316,54 @@ class SharedDeployments:
             body = deployment_blob(deployment)
             text = _canonical(body)
             if self._written.get(deployment_id) != text:
-                found.append(_Write(deployment_id, phase_of(deployment), body, text))
+                fence = self._fences.get(deployment_id, 0)
+                found.append(_Write(deployment_id, phase_of(deployment), body, text, fence))
         return found
 
-    def write(self, changes: list[_Write]) -> None:
-        now = self._clock.now()
-        for change in changes:
-            self._rows.write(change.deployment_id, 0, phase=change.phase, body=change.body, now=now)
+    def write(self, changes: list[_Write]) -> list[str]:
+        """Write ``changes``; return the ones refused because the fence is stale."""
 
-    def settle(self, changes: list[_Write]) -> None:
+        now = self._clock.now()
+        refused: list[str] = []
+        for change in changes:
+            if not self._rows.write(
+                change.deployment_id, change.fence, phase=change.phase, body=change.body, now=now
+            ):
+                refused.append(change.deployment_id)
+        return refused
+
+    def settle(self, changes: list[_Write], refused: list[str]) -> list[tuple[str, int]]:
         """Record what was written and let go of deployments no pipeline here is changing.
 
-        One still changed after its write stays held for the next checkpoint."""
+        One still changed after its write stays held for the next checkpoint. Returns the
+        leases to release: their pipeline ended here and its last state is written."""
 
+        self.lose(refused)
         for change in changes:
             if change.deployment_id in self._live:
                 self._written[change.deployment_id] = change.text
+        released: list[tuple[str, int]] = []
         for deployment_id, deployment in list(self._live.items()):
             if deployment_id in self._running:
                 continue
             if self._written.get(deployment_id) == _canonical(deployment_blob(deployment)):
-                self._live.pop(deployment_id, None)
-                self._written.pop(deployment_id, None)
+                if deployment_id in self._leased:
+                    released.append((deployment_id, self._fences.get(deployment_id, 0)))
+                self._forget(deployment_id)
+        return released
 
     @property
     def busy(self) -> bool:
         return bool(self._running)
 
-    def fail_interrupted(self, interrupted: Callable[[Deployment], None]) -> int:
-        """Start-up, one instance: a pipeline that was building or testing is gone."""
-
-        count = 0
-        now = self._clock.now()
-        for row in self._rows.all_deployments():
-            if row.phase not in {"building", "conformance"}:
-                continue
-            deployment = deployment_from(row.body)
-            interrupted(deployment)
-            self._rows.write(
-                deployment.deployment_id,
-                0,
-                phase=phase_of(deployment),
-                body=deployment_blob(deployment),
-                now=now,
-            )
-            count += 1
-        return count
-
 
 class SharedState:
     """Sessions, device logins, deployments, secret names, and audit, in SQL."""
 
-    def __init__(self, rows: DeployRows, clock: Clock) -> None:
+    def __init__(self, rows: DeployRows, clock: Clock, holder: str) -> None:
         self.rows = rows
         self.clock = clock
-        self.deployments = SharedDeployments(rows, clock)
+        self.deployments = SharedDeployments(rows, clock, holder)
 
     # Sessions. The token is the caller's; the row holds its digest.
 

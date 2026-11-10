@@ -20,6 +20,14 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
     app = FastAPI(title="City Deploy", version="0.10.0")
     app.state.deploy = service
 
+    @app.on_event("startup")
+    async def _leases() -> None:
+        service.start_leases()
+
+    @app.on_event("shutdown")
+    async def _stop_leases() -> None:
+        await service.stop_leases()
+
     @app.middleware("http")
     async def _checkpoint(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
