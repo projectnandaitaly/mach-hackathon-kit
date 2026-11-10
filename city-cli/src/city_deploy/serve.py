@@ -12,7 +12,7 @@ from city_deploy.api import create_app
 from city_deploy.conform import CandidateSuite
 from city_deploy.runtime import DRIVERS, GkeRuntime, KubernetesClient, MemoryRuntime
 from city_deploy.service import DeployService
-from city_deploy.stall import StallWatch
+from city_deploy.stall import watch_loop
 from city_deploy.teams import (
     OpenTeamDirectory,
     TeamDirectory,
@@ -73,15 +73,7 @@ def _with_wave_lock(service: DeployService, teams: TeamDirectory) -> DeployServi
 
 def build_app() -> FastAPI:
     app = create_app(build_service())
-    watch = StallWatch()
-
-    @app.on_event("startup")
-    async def _watch_loop() -> None:
-        watch.start()
-
-    @app.on_event("shutdown")
-    async def _unwatch_loop() -> None:
-        watch.stop()
+    watch_loop(app)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

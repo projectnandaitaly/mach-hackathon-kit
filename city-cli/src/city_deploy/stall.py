@@ -15,6 +15,8 @@ import time
 import traceback
 from collections.abc import Callable
 
+from fastapi import FastAPI
+
 _LOG = logging.getLogger("city.deploy.stall")
 
 
@@ -65,6 +67,22 @@ class StallWatch:
             frame = sys._current_frames().get(self._loop_thread or 0)
             stack = "".join(traceback.format_stack(frame, limit=15)) if frame else ""
             self._report(lag, stack)
+
+
+def watch_loop(app: FastAPI) -> StallWatch:
+    """Watch the loop that serves ``app`` from start-up to shutdown."""
+
+    watch = StallWatch()
+
+    @app.on_event("startup")
+    async def _watch() -> None:
+        watch.start()
+
+    @app.on_event("shutdown")
+    async def _unwatch() -> None:
+        watch.stop()
+
+    return watch
 
 
 def _log(lag: float, stack: str) -> None:
