@@ -65,7 +65,7 @@ class StallWatch:
                 continue
             reported = lag
             frame = sys._current_frames().get(self._loop_thread or 0)
-            stack = "".join(traceback.format_stack(frame, limit=15)) if frame else ""
+            stack = "".join(traceback.format_stack(frame, limit=40)) if frame else ""
             self._report(lag, stack)
 
 
