@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from city_sdk.gateway_client import AsyncGateway
 from city_sdk.gateway_env import load_gateway
 from city_sdk.harness import Brain, Harness
-from city_sdk.http import HttpIndex, HttpKeys, HttpRelay
+from city_sdk.http import RELAY_TIMEOUT, HttpIndex, HttpKeys, HttpRelay
 from city_sdk.llm import GATEWAY, LlmConnector
 from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
 
@@ -241,7 +241,7 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
         relay: HttpRelay | MemoryRelay = HttpRelay(
             agent_id=agent_id,
             private=private,
-            client=httpx.AsyncClient(base_url=relay_url),
+            client=httpx.AsyncClient(base_url=relay_url, timeout=RELAY_TIMEOUT),
             grant_body=grant_body,
         )
         index: HttpIndex | MemoryIndex = HttpIndex(

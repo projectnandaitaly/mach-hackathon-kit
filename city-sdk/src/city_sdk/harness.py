@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from cap.core.envelope import build, sign, verify
 from cap.core.errors import CapError
 from cap.core.jcs import card_digest, digest
@@ -325,11 +326,29 @@ class Harness:
         )
         self._running[msg_id] = fence
         self._running_digest[msg_id] = fingerprint
+        timed_out = False
         try:
-            rejected = await self._think(need, market, msg_id)
+            try:
+                rejected = await self._think(need, market, msg_id)
+            except httpx.TimeoutException:
+                timed_out = True
+                rejected = None
         finally:
             latest = self._running.pop(msg_id, fence)
             self._running_digest.pop(msg_id, None)
+        if timed_out:
+            # A slow Relay is not a dead agent. Release the lease now; a bug stays a rejection.
+            self.log.info(
+                "relay timed out",
+                now=self.clock.now(),
+                agent_id=self.agent_id,
+                msg_id=msg_id,
+                need_id=need_id,
+                fence=latest,
+                category="delivery",
+            )
+            await self._settle_ack(msg_id, latest, "retryable")
+            return 202, {"status": "received"}
         if rejected is not None:
             self._remember(msg_id, fingerprint, 200, rejected, latest, terminal=True)
             if latest != fence:
@@ -404,6 +423,8 @@ class Harness:
                 "status": "rejected",
                 "envelopes": [self._signed_ack(msg_id, "rejected", "OUT_OF_SCOPE")],
             }
+        except httpx.TimeoutException:
+            raise
         except Exception:
             self.log.error(
                 "agent crashed",

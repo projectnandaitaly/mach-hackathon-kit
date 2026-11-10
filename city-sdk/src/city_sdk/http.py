@@ -25,6 +25,8 @@ _KEY_TRIES = 3
 _KEY_RETRY_S = 0.4
 _HISTORY_LIMIT = 200
 _HISTORY_PAGES = 5
+# Same budget as the dispatcher: two seconds to connect, ten to read.
+RELAY_TIMEOUT = httpx.Timeout(10.0, connect=2.0)
 # Deploy conformance mints this sender; it is never published to the Index.
 _CONFORM_STRANGER = "agent:t99/stranger#"
 
@@ -200,9 +202,12 @@ class HttpRelay:
                 kid=self.kid,
                 grant_id=self.grant_id,
             )
-            response = await self._client.post(
-                f"/v1/markets/{self.market_id}/inbox/history", json=envelope
-            )
+            path = f"/v1/markets/{self.market_id}/inbox/history"
+            try:
+                response = await self._client.post(path, json=envelope)
+            except httpx.TimeoutException:
+                # History writes nothing, so the same signed envelope is safe to send once more.
+                response = await self._client.post(path, json=envelope)
             if response.status_code >= 400:
                 raise _cap_http(response, "relay history")
             body = response.json()
