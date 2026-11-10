@@ -141,7 +141,7 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
         agent_id: str,
         authorization: str | None = Header(default=None),
     ) -> dict[str, str]:
-        return service.mint_agent_key(_bearer(authorization), agent_id)
+        return await service.mint_agent_key_async(_bearer(authorization), agent_id)
 
     @app.post("/agents/{agent_id:path}/keys/next")
     async def prepare_rotation(
@@ -165,7 +165,7 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
         body = await _object(request)
-        return service.create_deployment(_bearer(authorization), body)
+        return await service.create_deployment_async(_bearer(authorization), body)
 
     @app.get("/deployments/{deployment_id}")
     async def get_deployment(

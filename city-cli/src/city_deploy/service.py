@@ -24,7 +24,7 @@ import httpx
 from cap.core.envelope import build, sign
 from cap.core.errors import CapError
 from cap.core.grant import SignedGrant, verify
-from cap.core.keys import PublicKey
+from cap.core.keys import KeyPair, PublicKey
 from city.testkit import ephemeral
 from city_conform.runner import Outcome, Report
 from city_index.families import family_of, role_permissions
@@ -179,6 +179,8 @@ class DeployService:
     ) -> None:
         self.builder = builder
         self._jobs: set[asyncio.Task[None]] = set()
+        # One mint at a time per agent: the held private key must match the ring.
+        self._minting: dict[str, asyncio.Lock] = {}
         self.index = index or IndexService()
         self.clock = clock or SystemClock()
         self.suite = suite or ReferenceSuite()
@@ -506,15 +508,35 @@ class DeployService:
 
     def mint_agent_key(self, token: str, agent_id: str) -> dict[str, str]:
         """Return the ring public JWK. First call mints; later calls are idempotent."""
+        current = self._current_key(token, agent_id)
+        if current is not None:
+            return current
+        pair = ephemeral()
+        self.secrets.hold_agent_key(agent_id, pair.private)
+        return self._install_key(agent_id, pair)
+
+    async def mint_agent_key_async(self, token: str, agent_id: str) -> dict[str, str]:
+        """``mint_agent_key`` with the Secret Manager write off the event loop."""
+
+        async with self._minting.setdefault(agent_id, asyncio.Lock()):
+            current = self._current_key(token, agent_id)
+            if current is not None:
+                return current
+            pair = ephemeral()
+            await self._offload(self.secrets.hold_agent_key, agent_id, pair.private)
+            return self._install_key(agent_id, pair)
+
+    def _current_key(self, token: str, agent_id: str) -> dict[str, str] | None:
         session = self._session(token)
         _require_agent(agent_id)
         if self.agent_ids.team_of(agent_id) != session.team_id:
             raise CapError("GRANT_PERMISSION_DENIED", "agent id is not the team's")
         current = self.ring.current_x(agent_id)
-        if current is not None:
-            return {"kty": "OKP", "crv": "Ed25519", "x": current}
-        pair = ephemeral()
-        self.secrets.hold_agent_key(agent_id, pair.private)
+        if current is None:
+            return None
+        return {"kty": "OKP", "crv": "Ed25519", "x": current}
+
+    def _install_key(self, agent_id: str, pair: KeyPair) -> dict[str, str]:
         self.ring.install(agent_id, pair.public, now=self.now())
         self._audit("agent key minted", agent_id)
         return pair.public.to_jwk()
@@ -533,6 +555,18 @@ class DeployService:
         return pair.public.to_jwk()
 
     def create_deployment(self, token: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        accepted = self._accept_deployment(token, body)
+        self.secrets.set_secret(accepted.agent_id, "grant", accepted.grant)
+        return self._open_deployment(accepted)
+
+    async def create_deployment_async(self, token: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """``create_deployment`` with the Secret Manager write off the event loop."""
+
+        accepted = self._accept_deployment(token, body)
+        await self._offload(self.secrets.set_secret, accepted.agent_id, "grant", accepted.grant)
+        return self._open_deployment(accepted)
+
+    def _accept_deployment(self, token: str, body: Mapping[str, Any]) -> _Accepted:
         session = self._session(token)
         card = _card(body.get("card"))
         grant = _grant_body(body.get("grant"))
@@ -546,22 +580,30 @@ class DeployService:
         if not isinstance(promote, bool):
             raise CapError("SCHEMA_INVALID", "promote")
         self._check_grant(session, card, grant, jws)
-        agent_id = str(card["agent_id"])
-        self.secrets.set_secret(agent_id, "grant", _grant_document(grant, jws))
-        version = str(card["version"])
-        self._assert_quota(session.team_id, agent_id)
+        return _Accepted(
+            team_id=session.team_id,
+            agent_id=str(card["agent_id"]),
+            card=card,
+            grant=_grant_document(grant, jws),
+            runtime_name=runtime_name,
+            promote=promote,
+        )
+
+    def _open_deployment(self, accepted: _Accepted) -> dict[str, Any]:
+        agent_id = accepted.agent_id
+        self._assert_quota(accepted.team_id, agent_id)
         deployment_id = "dep-" + uuid4().hex
         deployment = Deployment(
             deployment_id=deployment_id,
-            team_id=session.team_id,
+            team_id=accepted.team_id,
             agent_id=agent_id,
-            version=version,
-            card=card,
+            version=str(accepted.card["version"]),
+            card=accepted.card,
             status="uploading",
             upload_url=f"https://city.example/uploads/{deployment_id}",
             created_at=self.now(),
-            runtime_name=runtime_name,
-            promote=promote,
+            runtime_name=accepted.runtime_name,
+            promote=accepted.promote,
         )
         self._add_deployment(deployment)
         self._audit("deployment accepted", agent_id)
@@ -1648,6 +1690,16 @@ class DeployService:
             else:
                 found.smoked.add(agent_id)
         return found
+
+
+@dataclass(frozen=True)
+class _Accepted:
+    team_id: str
+    agent_id: str
+    card: dict[str, Any]
+    grant: str
+    runtime_name: str
+    promote: bool
 
 
 @dataclass
