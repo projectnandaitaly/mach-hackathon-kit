@@ -183,6 +183,8 @@ class SharedDeployments:
         self._live: dict[str, Deployment] = {}
         self._written: dict[str, str] = {}
         self._running: set[str] = set()
+        # Claimed for a pipeline that has not started yet; a checkpoint must not release it.
+        self._starting: set[str] = set()
         # The fence each held row had when read here; a claim replaces it.
         self._fences: dict[str, int] = {}
         self._leased: set[str] = set()
@@ -236,13 +238,16 @@ class SharedDeployments:
         self._live.pop(deployment_id, None)
         self._written.pop(deployment_id, None)
         self._running.discard(deployment_id)
+        self._starting.discard(deployment_id)
         self._fences.pop(deployment_id, None)
         self._leased.discard(deployment_id)
 
     # Leases.
 
-    def claim(self, deployment: Deployment) -> bool:
-        """Take the pipeline lease. False when another instance holds a live one."""
+    def claim(self, deployment: Deployment, *, starting: bool = False) -> bool:
+        """Take the pipeline lease. False when another instance holds a live one.
+
+        ``starting`` keeps the lease through the awaits before ``running``."""
 
         now = self._clock.now()
         fence = self._rows.claim(deployment.deployment_id, self.holder, now, now + LEASE)
@@ -252,6 +257,8 @@ class SharedDeployments:
         self._written.setdefault(deployment.deployment_id, "")
         self._fences[deployment.deployment_id] = fence
         self._leased.add(deployment.deployment_id)
+        if starting:
+            self._starting.add(deployment.deployment_id)
         return True
 
     def fence(self, deployment_id: str) -> int:
@@ -282,7 +289,9 @@ class SharedDeployments:
         """Open pipelines with no live lease that no pipeline here is running."""
 
         return [
-            item for item in self._rows.claimable(self._clock.now()) if item not in self._running
+            item
+            for item in self._rows.claimable(self._clock.now())
+            if item not in self._running and item not in self._starting
         ]
 
     def pipeline_row(self, deployment_id: str) -> Deployment | None:
@@ -291,13 +300,25 @@ class SharedDeployments:
             return None
         return deployment_from(row.body)
 
+    def stranded_row(self, deployment_id: str) -> Deployment | None:
+        """An upload a pipeline claimed (fence above 0) and then lost before ``building``.
+
+        A waiting upload was never claimed, so its fence is still 0."""
+
+        row = self._rows.deployment(deployment_id)
+        if row is None or row.phase != "uploading" or row.fence < 1:
+            return None
+        return deployment_from(row.body)
+
     # Pipelines and checkpoints.
 
     def running(self, deployment: Deployment) -> None:
         self._live[deployment.deployment_id] = deployment
+        self._starting.discard(deployment.deployment_id)
         self._running.add(deployment.deployment_id)
 
     def finished(self, deployment: Deployment) -> None:
+        self._starting.discard(deployment.deployment_id)
         self._running.discard(deployment.deployment_id)
 
     def is_running(self, deployment_id: str) -> bool:
@@ -344,7 +365,7 @@ class SharedDeployments:
                 self._written[change.deployment_id] = change.text
         released: list[tuple[str, int]] = []
         for deployment_id, deployment in list(self._live.items()):
-            if deployment_id in self._running:
+            if deployment_id in self._running or deployment_id in self._starting:
                 continue
             if self._written.get(deployment_id) == _canonical(deployment_blob(deployment)):
                 if deployment_id in self._leased:

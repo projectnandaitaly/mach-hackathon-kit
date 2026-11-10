@@ -401,8 +401,18 @@ class DeployService:
         found = await asyncio.to_thread(deployments.sweepable)
         resumed: list[str] = []
         for deployment_id in found:
+            if deployments.is_running(deployment_id):
+                continue
             deployment = await asyncio.to_thread(deployments.pipeline_row, deployment_id)
-            if deployment is None or deployments.is_running(deployment_id):
+            if deployment is None:
+                stranded = await asyncio.to_thread(deployments.stranded_row, deployment_id)
+                if stranded is not None and deployments.claim(stranded):
+                    _LOG.warning(
+                        "deploy pipeline lost before the build",
+                        extra={"agent_id": stranded.agent_id, "deployment_id": deployment_id},
+                    )
+                    self._refuse(stranded, "ERROR", "platform error", LOST_UPLOAD)
+                    resumed.append(deployment_id)
                 continue
             if not deployments.claim(deployment):
                 continue
@@ -781,9 +791,14 @@ class DeployService:
             deployment.status = "failed"
             deployment.outcome = "FAIL"
             raise
-        if self.shared is not None and not self.shared.deployments.claim(deployment):
+        if self.shared is not None and not self.shared.deployments.claim(deployment, starting=True):
             return deployment.view()
-        await self._fresh_placement(deployment.agent_id)
+        try:
+            await self._fresh_placement(deployment.agent_id)
+        except BaseException:
+            if self.shared is not None:
+                self.shared.deployments.finished(deployment)
+            raise
         deployment.status = "building"
         job = self._held(
             deployment, self._pipeline(deployment, dockerfile, pinned, recipe, files or {})
@@ -2237,6 +2252,7 @@ def _deployments(value: object) -> dict[str, Deployment]:
 
 
 RESTARTED_BUILD = "deploy restarted during the build; run city deploy again"
+LOST_UPLOAD = "deploy lost this release before the build; run city deploy again"
 # How long a purge, delete, or key mint waits for the team or agent before a 409.
 LOCK_WAIT = 120.0
 
