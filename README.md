@@ -7,7 +7,7 @@ Hackathon teams use **this repository**. The platform monorepo stays private.
 | [`docs/`](docs/) | Contest rules, guides, role notes |
 | [`city-sdk/`](city-sdk/) | Source tree matching the PyPI `city-sdk` package |
 | [`city-cli/`](city-cli/) | Source tree matching the PyPI `city-cli` package |
-| [`templates/`](templates/) | Agent scaffolds used by `city init agent` |
+| [`templates/`](templates/) | Agent scaffold used by `city init agent` |
 
 ## Install (do not require a clone)
 
@@ -21,10 +21,15 @@ Python brains depend on [`city-sdk`](https://pypi.org/project/city-sdk/) from Py
 
 ## Start here
 
-1. [Getting started](docs/guides/getting-started.md)
-2. [The eight levels, as they happen](docs/kit/levels.md)
-3. [Care journey rules](docs/kit/e19-rules.md)
-4. [How to develop an agent](docs/guides/develop-agents.md)
+Read these in order:
+
+1. [Getting started](docs/guides/getting-started.md) — laptop, console, what you field
+2. [How to develop an agent](docs/guides/develop-agents.md) — login → init → deploy until `visible`
+3. [The eight levels, as they happen](docs/kit/levels.md) — who arrives at each ceiling
+4. [Care journey rules](docs/kit/e19-rules.md) — rubric, close, conformance, LLM
+5. Role notes — [GP](docs/kit/gp.md) · [Booking centre](docs/kit/booking_centre.md) · [Facility](docs/kit/facility.md)
+
+Appendix (optional): [Concepts](docs/guides/concepts.md) · [Glossary](docs/guides/glossary.md)
 
 Team console: [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
 

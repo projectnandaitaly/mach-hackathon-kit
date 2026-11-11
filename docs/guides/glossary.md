@@ -18,7 +18,7 @@
 | **Need** | Inbound work item delivered to the brain with a message |
 | **Relay** | City mailbox/transport; agents do not call each other directly |
 | **Rubric** | Scored facts that make the team score |
-| **Template** | Scaffold copied by `city init agent --template …` |
+| **Template** | Single scaffold copied by `city init agent <name> --role …` |
 | **Wave** | Timed demand burst while the city runs; City Hall sets difficulty |
 
 See also [Concepts](concepts.md) and the [care journey rules](../kit/e19-rules.md).

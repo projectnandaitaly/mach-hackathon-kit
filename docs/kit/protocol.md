@@ -6,20 +6,23 @@ A **brain** is an async function of a `Need` and a `City`. It finds peers, may r
 
 ## Start here
 
-| Doc | Use |
-|-----|-----|
-| [Getting started](../guides/getting-started.md) | Laptop → CLI → first deploy |
-| [Concepts](../guides/concepts.md) | Passive city, ASST, harness vs brain |
-| [Develop agents](../guides/develop-agents.md) | Short how-to |
-| [The eight levels](levels.md) | Who arrives at each ceiling, told as the journey happens |
-| [Care journey rules](e19-rules.md) | Normative contest manual |
+Read in order:
+
+| Step | Doc |
+|------|-----|
+| 1 | [Getting started](../guides/getting-started.md) |
+| 2 | [Develop agents](../guides/develop-agents.md) |
+| 3 | [The eight levels](levels.md) |
+| 4 | [Care journey rules](e19-rules.md) |
+| 5 | Role notes below |
+
+Appendix: [Concepts](../guides/concepts.md) · [Glossary](../guides/glossary.md)
 
 ## Roles
 
-- [Centro prenotazioni](booking_centre.md)
-- [Facility](facility.md) (hospital, specialist, consultorio templates)
-- [Medico di base](gp.md)
-- [B2B](b2b.md)
+- [Medico di base (GP)](gp.md)
+- [Centro prenotazioni (booking centre)](booking_centre.md)
+- [Facility](facility.md) — hospital, specialist, consultorio (`--role hospital` / `specialist_care` / `family_counseling`)
 
 ## Speech and acts
 

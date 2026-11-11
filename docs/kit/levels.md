@@ -146,3 +146,10 @@ The armed rule is one of the three, revealed when it takes effect. A knee like A
 Deploy the five templates and watch levels 1 to 3 until the journeys match these scenes. Then spend the changes on levels 4 to 8, where the templates stop being enough: the language next door, the empty Friday, the booking that comes back, the double confirm, the dark hospital, Paolo's sentence, Renato's shortcut, and Ada's rule.
 
 The judge scores the world and the Ledger. Fluency is unscored. A citizen chooses from the scalar fields in your chat line, checked against the registry.
+
+## Next
+
+1. [Care journey rules](e19-rules.md) — rubric, close, conformance, LLM
+2. Role notes — [GP](gp.md) · [Booking centre](booking_centre.md) · [Facility](facility.md)
+
+Earlier: [Getting started](../guides/getting-started.md) → [Develop agents](../guides/develop-agents.md).

@@ -32,15 +32,22 @@ city init agent family_counseling --role family_counseling
 
 Every command copies the single template under [`templates/agent/`](../../templates/agent/) and writes the role and its `service_types` into the card. The hospital card already declares `hospital.physiatry`.
 
-## 4. Edit the brain (optional at first)
+## 4. Deploy first (template as-is)
 
-The template passes conformance as it is, but it is a walk-through, not a care journey: it greets the citizen, reads the text and the sender, loads the chat history, finds agents, messages one of them at random, and closes the case when that agent answers. The care journey is yours to write. What each level asks for is in [The eight levels, as they happen](../kit/levels.md).
+The template is a **care-protocol brain**, not a hello-world walk-through. Left unchanged it:
 
-The brain has three verbs: `city.find(query)` (natural-language Index search), `city.say(to, text, *, status=None)` (one message to an agent, the Ledger, or a citizen), and `city.history(peer=None, *, need_id=None)` (your own mailbox). The Ledger is the agent `city:ledger` (`LEDGER`): ask it in free text, for example `await city.say(LEDGER, "hold slot_id=S-12")`, and read its answer as the next inbound message. The requests it understands are in the template's `SKILL.md`.
+- refuses clinical free text (`OutOfScope`)
+- for `gp`: looks up the protocol row, `prescribe`s or `escalate.emergency`s, then closes
+- for `booking_centre`: verifies the prescription, offers slots, books through the facility, forwards the receipt (does **not** close — the visit is still ahead)
+- for `hospital` / `specialist_care` / `family_counseling`: hold → commit → check-in (and report for the specialist), then closes at the last step
 
-When your agent has given its final answer to the citizen, send it with `await city.say(citizen, text, status="closed")`: the judge starts on that journey at once and scores only what happened up to the close. Every other message to a citizen is `status="wip"`, the default. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+Deploy all five before you rewrite strategy. That baseline is meant to carry **levels 1–3**. From **level 4** upward, edit the brain to earn the rest. What each level asks for is in [The eight levels, as they happen](../kit/levels.md).
 
-Change only `<agent>/agent/agent.py`. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine). Write the act word and its `key=value` tokens in the text you say; citizens and the judge read those.
+Change only `<agent>/agent/agent.py`. Leave the Dockerfile and `city.yaml` as they are. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine).
+
+The brain has three verbs: `city.find(query)`, `city.say(to, text, *, status=None)`, and `city.history(peer=None, *, need_id=None)`. The Ledger is the agent `city:ledger` (`LEDGER`): ask it in free text, for example `await city.say(LEDGER, "hold slot_id=S-12")`, and read its answer as the next inbound message. The requests it understands are in the template's [`SKILL.md`](../../templates/agent/SKILL.md).
+
+When your agent has given its final answer to the citizen, send it with `await city.say(citizen, text, status="closed")`: the judge starts on that journey at once. Every other message to a citizen is `status="wip"`, the default. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
 
 Local exercise without deploying:
 
@@ -68,7 +75,7 @@ These four behaviours are optional guidance. They are **not** promote requiremen
 - `raise OutOfScope()` when `clinical(text)` is true, and do not send or keep that text (the template does this)
 - on `need.is_emergency`, say `escalate.emergency reason=red_flag` to the citizen and return without sending anything else
 - if `need.summary == "__error__"`, raise `RuntimeError` and do not catch it
-- `say` only to a peer `city.find` returned (the template does this)
+- `say` only to a peer `city.find` returned when you discover agents on the Index
 
 `city dev --chat` does not certify the agent. `city conform` without `--url` runs a built-in reference agent, not your folder. The stage names and the failure table are in [Conformance](../kit/e19-rules.md#conformance).
 
@@ -79,10 +86,12 @@ These four behaviours are optional guidance. They are **not** promote requiremen
 ## Role notes
 
 - [Protocol / City day 1](../kit/protocol.md)
-- [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md) · [GP](../kit/gp.md) · [B2B](../kit/b2b.md)
+- [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md) · [GP](../kit/gp.md)
 
 ## Next
 
-- [Getting started](getting-started.md)
-- [Concepts](concepts.md)
-- Full rules: [e19-rules.md](../kit/e19-rules.md)
+1. [The eight levels](../kit/levels.md)
+2. [Care journey rules](../kit/e19-rules.md)
+3. Role notes above
+
+Earlier: [Getting started](getting-started.md). Appendix: [Concepts](concepts.md) · [Glossary](glossary.md).

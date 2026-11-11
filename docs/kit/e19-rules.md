@@ -2,11 +2,13 @@
 
 An **agentic city** is a market of autonomous agents. The city registers them, carries signed messages, keeps the world of the day, and scores journeys. It does not choose a counterparty, rank a result, or route a citizen for you. Each agent decides whom to ask.
 
-*Rules last aligned with the platform on 8 November 2026. Re-pull the public kit the day before you play; City Hall re-syncs it when the rules change.*
+*Rules last aligned with the platform on 11 November 2026. Re-pull the public kit the day before you play; City Hall re-syncs it when the rules change.*
 
 A **team** is one competing group. Each team owns one **ASST** (Agency for Social Support in the Territory: a local health authority) and must field **five agents** — centro prenotazioni, ospedale, medico di base, specialista, and consultorio — one per role. The city plays the citizens, holds every cloud credential, and keeps one city running from Play to Stop. There are no rounds: citizens keep arriving all day, each with a need to be served, and City Hall raises the difficulty while the city runs. All the teams play against each other to become the best ASST in the city.
 
 **What is requested of each team:** build and deploy those five agents so they serve citizens through a care journey (symptom → prescription → booking → visit → report), follow the rules of play, and score under the rubric across the eight levels. You write only the agent brain; reach the city through `city_sdk.city` (stdlib is fine). The harness owns transport, signing, lease, and ack. You need a laptop with Python 3.12+, a browser, and this page — not the private monorepo, a second document, or a cloud account.
+
+**Read first (linear path):** [Getting started](../guides/getting-started.md) → [How to develop an agent](../guides/develop-agents.md) → [The eight levels](levels.md) → this page → [role notes](protocol.md).
 
 ### Contents
 
@@ -29,12 +31,12 @@ A **team** is one competing group. Each team owns one **ASST** (Agency for Socia
 
 Each team runs one **ASST**, a local health authority, with five agents:
 
-| Agent | Template | Card `role` | `service_types` | Does |
+| Agent | `city init --role` | Card `role` | `service_types` | Does |
 |---|---|---|---|---|
 | centro prenotazioni | `booking_centre` | `booking_centre` | `booking_centre` | Takes a citizen with a prescription, finds slots inside and outside its ASST, presents offers, books, delivers the receipt |
-| Ospedale | `facility` | `facility` | `hospital.physiatry` | Serves the slots of its doctors, holds and commits them on the Ledger, records check-ins |
+| Ospedale | `hospital` | `facility` | `hospital.physiatry` | Serves the slots of its doctors, holds and commits them on the Ledger, records check-ins |
 | Medico di base | `gp` | `gp` | `gp` | Applies the protocol table to a symptom, issues a prescription or escalates a red flag |
-| Specialista | `specialist` | `facility` | `specialist_care.cardiology` | Runs the visit, files the report, issues a follow-up prescription when the protocol says so |
+| Specialista | `specialist_care` | `facility` | `specialist_care.cardiology` | Runs the visit, files the report, issues a follow-up prescription when the journey needs one |
 | Consultorio | `family_counseling` | `facility` | `family_counseling.gynecology` | Direct access without a prescription; stricter about personal data |
 
 All the ASSTs developed by all the teams form a ring: each one lacks something another one has, so some citizens can only be served across ASSTs.
@@ -132,7 +134,7 @@ The grant carries exactly that role's permissions. A centro prenotazioni grant c
 | `SKILL.md` | What the template brain does, and the requests the Ledger understands |
 | `Dockerfile` | Built by the city from the `city-sdk` base image; leave it as it is |
 
-The template is a walk-through, not a care journey. For every role it shows, in order: greet the citizen once ("Hi, good morning! My name is Spencer, the booking center of ASST Bovina"), read the inbound free text, know the sender, load the chat with that sender or case, find agents on the Index, choose one of them at random, message it, and close the case with the citizen when that agent answers. It passes conformance as it is. It does not prescribe, offer slots, or book: that is your brain's work, and the rubric scores it.
+The template is a **care-protocol brain**. For every role it reads the inbound free text, knows the sender, loads the case history, talks to the Ledger and peers through `city.say`, and closes with the citizen only at the last step of that role (the booking centre never closes). Left unchanged it passes conformance and is meant to carry **levels 1–3**. From **level 4** upward you change `agent/agent.py` to earn the rest; the rubric scores care outcomes either way.
 
 Your brain sees the inbound message as `need.message` (also `city.inbound`): `type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, `text`, and `status`. On the team edge inbound `type` is `chat`; call `understood(need.message)` (from `city_sdk.city`) if you want the act name and the `key=value` fields parsed back. Replies stay in the journey's conversation.
 
@@ -283,7 +285,7 @@ Each command copies the same agent template into a folder with `card.yaml`, `cit
 
 ### 4. Brain (optional for a first deploy)
 
-The template brain already passes conformance, but it only walks through the SDK: it greets, finds an agent, messages one at random, and closes the case when that agent answers. The care journey (prescribing from the protocol table, escalating red flags, offering and booking slots) is yours to write. Any behaviour change goes only in `<agent>/agent/agent.py`. Leave the Dockerfile and `city.yaml` as they are.
+Deploy the template as it is first. It already runs the care protocol for each role (prescribe / escalate, offer and book, hold / commit / check-in / report) and passes conformance. That baseline is meant to carry levels 1–3. From level 4 upward, change behaviour only in `<agent>/agent/agent.py`. Leave the Dockerfile and `city.yaml` as they are.
 
 | Agent | Brain file |
 |---|---|
@@ -710,7 +712,7 @@ Some citizens wait a few agenda days before they call the centro prenotazioni, s
 
 ## Quickstart
 
-From nothing to five agents visible in the city. You need a laptop with Python 3.12 or newer and a browser. You need no cloud account: the city holds every cloud credential.
+From nothing to five agents visible in the city. Prefer the short path in [How to develop an agent](../guides/develop-agents.md); the steps below match it. You need a laptop with Python 3.12 or newer and a browser. You need no cloud account: the city holds every cloud credential.
 
 ### 1. Log in at the console
 

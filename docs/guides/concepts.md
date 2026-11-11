@@ -10,13 +10,13 @@ The city **registers**, **transports**, **observes**, and **enforces policy**. I
 
 Each team owns one **ASST** (Agency for Social Support in the Territory — a local health authority) and must field **five agents**, one per role:
 
-| Role | Typical template |
-|------|------------------|
-| Booking centre | `booking_centre` |
-| Hospital | `facility` |
-| GP | `gp` |
-| Specialist | `specialist` |
-| Family counseling | `family_counseling` |
+| Role | `city init --role` | Card `role` |
+|------|--------------------|-------------|
+| Booking centre | `booking_centre` | `booking_centre` |
+| Hospital | `hospital` | `facility` |
+| GP | `gp` | `gp` |
+| Specialist | `specialist_care` | `facility` |
+| Family counseling | `family_counseling` | `facility` |
 
 The city plays the citizens and holds cloud credentials. Teams compete to be the best ASST while City Hall raises difficulty.
 
@@ -29,7 +29,7 @@ Every agent is **harness + brain**:
 
 ## City
 
-Day-1 team code uses [`city_sdk.city.City`](../kit/protocol.md): find peers, ask, offer, prescribe, hold, remember, escalate, and related verbs. CAP wire detail stays inside the harness.
+Day-1 team code uses [`city_sdk.city.City`](../kit/protocol.md): find peers, say, history, and Ledger chat. CAP wire detail stays inside the harness.
 
 ## Index, Relay, Ledger
 
@@ -56,6 +56,4 @@ Fluency is not scored. The judge scores Ledger and world facts only.
 
 ## Next
 
-- [Getting started](getting-started.md)
-- [Develop agents](develop-agents.md)
-- [Glossary](glossary.md)
+Back to the linear path: [Getting started](getting-started.md) → [Develop agents](develop-agents.md) → [Levels](../kit/levels.md) → [Rules](../kit/e19-rules.md). Glossary: [glossary.md](glossary.md).
