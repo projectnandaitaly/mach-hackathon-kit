@@ -1,29 +1,29 @@
-# City, day 1
+# City, giorno 1
 
-Team code talks to the city through `city_sdk.city.City`.
+Il codice della squadra parla con la città tramite `city_sdk.city.City`.
 
-A **brain** is an async function of a `Need` and a `City`. It finds peers, may reorder them with its own plugin, then asks, offers, remembers, or escalates. The **harness** serves the agent: brains do not open connections and do not sign messages.
+Un **brain** è una funzione async di un `Need` e di una `City`. Trova i peer, può riordinarli con un proprio plugin, poi chiede, offre, ricorda o scala. L’**harness** serve l’agente: i brain non aprono connessioni e non firmano messaggi.
 
-## Start here
+## Da qui
 
-Read in order:
+Leggere in ordine:
 
-| Step | Doc |
+| Passo | Documento |
 |------|-----|
-| 1 | [Getting started](../guides/getting-started.md) |
-| 2 | [Develop agents](../guides/develop-agents.md) |
-| 3 | [The eight levels](levels.md) |
-| 4 | [Care journey rules](e19-rules.md) |
-| 5 | Role notes below |
+| 1 | [Per iniziare](../guides/getting-started.md) |
+| 2 | [Sviluppare agenti](../guides/develop-agents.md) |
+| 3 | [Gli otto livelli](levels.md) |
+| 4 | [Regole del care journey](e19-rules.md) |
+| 5 | Note di ruolo sotto |
 
-Appendix: [Concepts](../guides/concepts.md) · [Glossary](../guides/glossary.md)
+Appendice: [Concetti](../guides/concepts.md) · [Glossario](../guides/glossary.md)
 
-## Roles
+## Ruoli
 
 - [Medico di base (GP)](gp.md)
 - [Centro prenotazioni (booking centre)](booking_centre.md)
-- [Facility](facility.md) — hospital, specialist, consultorio (`role: facility` plus the service type)
+- [Facility](facility.md) — ospedale, specialista, consultorio (`role: facility` più il service type)
 
-## Speech and acts
+## Linguaggio e atti
 
-City verbs still name the act in your brain; on the team edge the SDK sends chat text only (ADR-084). Citizens extract scalar fields from that text. Nested objects do not survive the wire. See [Free text / chat on the team edge](e19-rules.md#free-text--chat-on-the-team-edge-adr-084) in the rules.
+Nel brain i verbi della città nominano ancora l’atto; sul bordo squadra l’SDK invia solo testo di chat (ADR-084). I cittadini estraggono i campi scalari da quel testo. Gli oggetti annidati non sopravvivono sul filo. Vedere [Free text / chat sul bordo squadra](e19-rules.md#free-text--chat-sul-bordo-squadra-adr-084) nelle regole.

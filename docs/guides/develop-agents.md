@@ -1,25 +1,25 @@
-# How to develop an agent
+# Come sviluppare un agente
 
-You write the **brain**. The harness owns transport, signing, lease, and ack. Prefer the full step-by-step and troubleshooting tables in the [care journey rules](../kit/e19-rules.md#how-to-develop-an-agent); this page is the short path.
+Scrivete il **brain**. L’harness gestisce trasporto, firma, lease e ack. Per il percorso completo e le tabelle di troubleshooting usate le [regole del care journey](../kit/e19-rules.md#come-sviluppare-un-agente); questa pagina è il percorso breve.
 
-## 1. Install the CLI
+## 1. Installare la CLI
 
 ```bash
 uv tool install city-cli
 uv tool upgrade city-cli
 ```
 
-Use a current `city-cli` from PyPI.
+Usate una `city-cli` attuale da PyPI.
 
-## 2. Log in
+## 2. Accedere
 
 ```bash
-city login                 # or: city login --no-browser
+city login                 # oppure: city login --no-browser
 ```
 
-Session, controller key, and LLM Gateway key land under `~/.config/city/teams/<your team>/`. Never commit that directory.
+Sessione, chiave del controller e chiave del LLM Gateway finiscono in `~/.config/city/teams/<vostra squadra>/`. Non committate mai quella directory.
 
-## 3. Scaffold the five agents
+## 3. Scaffold dei cinque agenti
 
 ```bash
 mkdir asst && cd asst
@@ -30,13 +30,13 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Every command copies the single template under [`templates/agent/`](../../templates/agent/). It writes your team and a new agent id. It does **not** choose the seat. The copied card is only a starting file.
+Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. **Non** sceglie il posto. La card copiata è solo un file di partenza.
 
-## 4. Set the card
+## 4. Impostare la card
 
-Edit `card.yaml` in each folder, and set `role` in `city.yaml` to the same card role:
+Modificate `card.yaml` in ogni cartella e impostate `role` in `city.yaml` allo stesso ruolo della card:
 
-| Folder | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+| Cartella | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
 |--------|--------------------|-----------------|--------------------|
 | `booking_centre` | `booking_centre` | `booking_centre` | `booking_centre` |
 | `hospital` | `facility` | `hospital.physiatry` | `facility` |
@@ -44,44 +44,44 @@ Edit `card.yaml` in each folder, and set `role` in `city.yaml` to the same card 
 | `specialist` | `facility` | `specialist_care.cardiology` | `facility` |
 | `family_counseling` | `facility` | `family_counseling.gynecology` | `facility` |
 
-`city card validate <folder>` checks the card. The brain reads `role` and `service_types` from that file.
+`city card validate <cartella>` controlla la card. Il brain legge `role` e `service_types` da quel file.
 
-## 5. Deploy the template brain
+## 5. Rilasciare il brain del template
 
-The template is a **care-protocol brain**, not a hello-world walk-through. Left unchanged it:
+Il template è un **brain di care-protocol**, non un hello-world. Lasciato invariato:
 
-- refuses clinical free text (`OutOfScope`)
-- for `gp`: looks up the protocol row, `prescribe`s or `escalate.emergency`s, then closes
-- for `booking_centre`: verifies the prescription, offers slots, books through the facility, forwards the receipt (does **not** close — the visit is still ahead)
-- for `hospital` / `specialist_care` / `family_counseling`: hold → commit → check-in (and report for the specialist), then closes at the last step
+- rifiuta il free text clinico (`OutOfScope`)
+- per `gp`: cerca la riga di protocollo, fa `prescribe` o `escalate.emergency`, poi chiude
+- per `booking_centre`: verifica la ricetta, offre slot, prenota tramite la facility, inoltra la ricevuta (**non** chiude — la visita è ancora davanti)
+- per `hospital` / `specialist_care` / `family_counseling`: hold → commit → check-in (e referto per lo specialista), poi chiude all’ultimo passo
 
-Deploy all five before you rewrite strategy. That baseline is meant to carry **levels 1–3**. From **level 4** upward, edit the brain to earn the rest. What each level asks for is in [The eight levels, as they happen](../kit/levels.md).
+Rilasciate tutti e cinque prima di riscrivere la strategia. Quella baseline è pensata per i **livelli 1–3**. Dal **livello 4** in su modificate il brain per guadagnare il resto. Cosa chiede ogni livello: [Gli otto livelli, come accadono](../kit/levels.md).
 
-Change only `<agent>/agent/agent.py` after the card is set. Leave the Dockerfile as it is. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine).
+Dopo aver impostato la card, cambiate solo `<agente>/agent/agent.py`. Lasciate il Dockerfile com’è. Raggiungete la città solo tramite `city_sdk.city` (stdlib come `json` e `re` vanno bene).
 
-The brain has three verbs: `city.find(query)`, `city.say(to, text, *, status=None)`, and `city.history(peer=None, *, need_id=None)`. The Ledger is the agent `city:ledger` (`LEDGER`): ask it in free text, for example `await city.say(LEDGER, "hold slot_id=S-12")`, and read its answer as the next inbound message. The requests it understands are in the template's [`SKILL.md`](../../templates/agent/SKILL.md).
+Il brain ha tre verbi: `city.find(query)`, `city.say(to, text, *, status=None)` e `city.history(peer=None, *, need_id=None)`. Il Ledger è l’agente `city:ledger` (`LEDGER`): chiedetegli in free text, per esempio `await city.say(LEDGER, "hold slot_id=S-12")`, e leggete la risposta come prossimo messaggio in ingresso. Le richieste che capisce sono nel [`SKILL.md`](../../templates/agent/SKILL.md) del template.
 
-When your agent has given its final answer to the citizen, send it with `await city.say(citizen, text, status="closed")`: the judge starts on that journey at once. Every other message to a citizen is `status="wip"`, the default. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
+Quando l’agente ha dato la risposta finale al cittadino, inviatela con `await city.say(citizen, text, status="closed")`: il giudice parte subito su quel journey. Ogni altro messaggio a un cittadino è `status="wip"`, il default. Solo l’agente a cui il cittadino ha scritto per ultimo può chiudere, e una chiusura termina il journey: chiudete solo dall’ultimo passo (dopo la ricetta del medico di base, il check-in o il referto; il centro prenotazioni non chiude mai). Vedere [Chiudere un caso](../kit/e19-rules.md#chiudere-un-caso-adr-106).
 
-## How to develop and test the agent locally
+## Sviluppare e testare l’agente in locale
 
-From the parent of the agent folders:
+Dalla cartella padre degli agenti:
 
 ```bash
 city run family_counseling
 ```
 
-That runs the brain in the folder against an in-memory Index, mailbox, and Ledger. Nothing is sent to the city mailbox. The chat asks you to be a `citizen`, an `agent`, or the `ledger`, and a sentence is sent as that sender. `/rx` issues a local prescription. Edit `agent/agent.py` while the chat is open; the next line reloads the brain. `\quitChat` leaves.
+Esegue il brain della cartella contro Index, mailbox e Ledger in memoria. Nulla viene inviato alla mailbox della città. La chat vi chiede di essere `citizen`, `agent` o `ledger`, e una frase viene inviata come quel mittente. `/rx` emette una ricetta locale. Modificate `agent/agent.py` a chat aperta; la riga successiva ricarica il brain. `\quitChat` esce.
 
-The full sender table, the stand-in Ledger operations, and the slash commands are in [How to develop and test the agent locally](../kit/e19-rules.md#how-to-develop-and-test-the-agent-locally).
+La tabella completa dei mittenti, le operazioni del Ledger di stand-in e i comandi slash sono in [Sviluppare e testare l’agente in locale](../kit/e19-rules.md#sviluppare-e-testare-lagente-in-locale).
 
-`city run` does not certify the agent. Release still goes through `city deploy`.
+`city run` non certifica l’agente. Il rilascio passa comunque da `city deploy`.
 
-## 6. Validate and deploy
+## 6. Validare e fare deploy
 
 ```bash
 city card validate hospital
-# from the parent of the agent folders; specialist before hospital is recommended
+# dalla cartella padre degli agenti; specialist prima di hospital è raccomandato
 city deploy specialist
 city deploy hospital
 city deploy gp
@@ -90,30 +90,30 @@ city deploy family_counseling
 city status
 ```
 
-Expect `released` / `visible`. Conformance is the gate inside `city deploy`: the city runs the suite against the candidate and promotes it only on PASS. The first release runs the full suite; a later release of an agent that is already serving runs the fast suite.
+Aspettatevi `released` / `visible`. La conformance è il gate dentro `city deploy`: la città esegue la suite sul candidato e lo promuove solo con PASS. Il primo rilascio esegue la suite completa; un rilascio successivo di un agente già in servizio esegue la suite rapida.
 
-These four behaviours are optional guidance. They are **not** promote requirements (ADR-088):
+Questi quattro comportamenti sono indicazioni opzionali. **Non** sono requisiti di promote (ADR-088):
 
-- `raise OutOfScope()` when `clinical(text)` is true, and do not send or keep that text (the template does this)
-- on `need.is_emergency`, say `escalate.emergency reason=red_flag` to the citizen and return without sending anything else
-- if `need.summary == "__error__"`, raise `RuntimeError` and do not catch it
-- `say` only to a peer `city.find` returned when you discover agents on the Index
+- `raise OutOfScope()` quando `clinical(text)` è vero, e non inviare né conservare quel testo (il template lo fa)
+- su `need.is_emergency`, dire `escalate.emergency reason=red_flag` al cittadino e tornare senza altro
+- se `need.summary == "__error__"`, sollevare `RuntimeError` e non catturarlo
+- fare `say` solo verso un peer restituito da `city.find` quando scoprite agenti sull’Index
 
-`city run` does not certify the agent. `city conform` without `--url` runs a built-in reference agent, not your folder. The stage names and the failure table are in [Conformance](../kit/e19-rules.md#conformance).
+`city run` non certifica l’agente. `city conform` senza `--url` esegue un agente di riferimento built-in, non la vostra cartella. I nomi degli stage e la tabella dei fallimenti sono in [Conformance](../kit/e19-rules.md#conformance).
 
 ## LLM Gateway
 
-`city login` downloads the team virtual key. Do not put it in `card.yaml` or the brain. Deploy injects it into the pod. See the rules section [Models (LLM Gateway)](../kit/e19-rules.md#models-llm-gateway).
+`city login` scarica la virtual key della squadra. Non mettetela in `card.yaml` né nel brain. Il deploy la inietta nel pod. Vedere la sezione [Modelli (LLM Gateway)](../kit/e19-rules.md#modelli-llm-gateway).
 
-## Role notes
+## Note di ruolo
 
-- [Protocol / City day 1](../kit/protocol.md)
-- [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md) · [GP](../kit/gp.md)
+- [Protocollo / City giorno 1](../kit/protocol.md)
+- [Centro prenotazioni](../kit/booking_centre.md) · [Facility](../kit/facility.md) · [Medico di base](../kit/gp.md)
 
-## Next
+## Avanti
 
-1. [The eight levels](../kit/levels.md)
-2. [Care journey rules](../kit/e19-rules.md)
-3. Role notes above
+1. [Gli otto livelli](../kit/levels.md)
+2. [Regole del care journey](../kit/e19-rules.md)
+3. Note di ruolo sopra
 
-Earlier: [Getting started](getting-started.md). Appendix: [Concepts](concepts.md) · [Glossary](glossary.md).
+Prima: [Per iniziare](getting-started.md). Appendice: [Concetti](concepts.md) · [Glossario](glossary.md).

@@ -1,59 +1,59 @@
-# Concepts
+# Concetti
 
-Short orientation for teams. Contest detail lives in the [care journey rules](../kit/e19-rules.md).
+Orientamento breve per le squadre. Il dettaglio del contest è nelle [regole del care journey](../kit/e19-rules.md).
 
-## Passive city
+## Città passiva
 
-The city **registers**, **transports**, **observes**, and **enforces policy**. It does **not** choose a counterparty, rank Index results, or route a citizen for you. Your agent decides whom to ask.
+La città **registra**, **trasporta**, **osserva** e **applica le policy**. **Non** sceglie la controparte, non ordina i risultati dell’Index e non instrada un cittadino al posto vostro. È l’agente a decidere a chi chiedere.
 
-## ASST and the five agents
+## ASST e i cinque agenti
 
-Each team owns one **ASST** (Agency for Social Support in the Territory — a local health authority) and must field **five agents**, one per role:
+Ogni squadra gestisce un’**ASST** (Azienda Socio Sanitaria Territoriale — autorità sanitaria locale) e deve mettere in campo **cinque agenti**, uno per ruolo:
 
-| Role | `card.yaml` `role` | `service_types` |
+| Ruolo | `card.yaml` `role` | `service_types` |
 |------|--------------------|-----------------|
-| Booking centre | `booking_centre` | `booking_centre` |
-| Hospital | `facility` | `hospital.physiatry` |
-| GP | `gp` | `gp` |
-| Specialist | `facility` | `specialist_care.cardiology` |
-| Family counseling | `facility` | `family_counseling.gynecology` |
+| Centro prenotazioni | `booking_centre` | `booking_centre` |
+| Ospedale | `facility` | `hospital.physiatry` |
+| Medico di base | `gp` | `gp` |
+| Specialista | `facility` | `specialist_care.cardiology` |
+| Consultorio | `facility` | `family_counseling.gynecology` |
 
-The city plays the citizens and holds cloud credentials. Teams compete to be the best ASST while City Hall raises difficulty.
+La città interpreta i cittadini e tiene le credenziali cloud. Le squadre competono per essere la miglior ASST mentre City Hall alza la difficoltà.
 
-## Harness vs brain
+## Harness e brain
 
-Every agent is **harness + brain**:
+Ogni agente è **harness + brain**:
 
-- **Harness** (city-provided, inside `city-sdk`): HTTP endpoints, signing, lease, fence, ack, journal.
-- **Brain** (your code): an async function of a `Need` and a `City`. You import `city_sdk.city` only. You do not open sockets or sign messages.
+- **Harness** (fornito dalla città, dentro `city-sdk`): endpoint HTTP, firma, lease, fence, ack, journal.
+- **Brain** (il vostro codice): una funzione async di un `Need` e di una `City`. Importate solo `city_sdk.city`. Non aprite socket e non firmate messaggi.
 
 ## City
 
-Day-1 team code uses [`city_sdk.city.City`](../kit/protocol.md): find peers, say, history, and Ledger chat. CAP wire detail stays inside the harness.
+Il codice della squadra al giorno 1 usa [`city_sdk.city.City`](../kit/protocol.md): trovare peer, parlare, storia e chat con il Ledger. Il dettaglio CAP resta nell’harness.
 
 ## Index, Relay, Ledger
 
-| Piece | Role for you |
+| Pezzo | Ruolo per voi |
 |-------|----------------|
-| **Index** | Discovery: candidates for a service; **unordered** — you choose |
-| **Relay / mailbox** | Every agent-to-agent message passes through the city |
-| **Ledger** | World of the day: prescriptions, holds, commits, check-ins, reports, rules |
+| **Index** | Discovery: candidati per un servizio; **non ordinati** — scegliete voi |
+| **Relay / mailbox** | Ogni messaggio tra agenti passa dalla città |
+| **Ledger** | Mondo della giornata: ricette, hold, commit, check-in, referti, regole |
 
-## Profiles
+## Profili
 
-- **`cap/1.0`** — profile-neutral agent protocol (endpoints, envelopes, delivery).
-- **`mhm/1.0` / care journey** — healthcare market vocabulary, roles, and scoring for this event.
+- **`cap/1.0`** — protocollo agente indipendente dal profilo (endpoint, envelope, delivery).
+- **`mhm/1.0` / care journey** — vocabolario del mercato sanitario, ruoli e punteggio di questo evento.
 
-## Speech and market acts
+## Linguaggio e atti di mercato
 
-On the team edge, traffic is **chat text** (ADR-084; full detail in the kit):
+Sul bordo squadra il traffico è **testo di chat** (ADR-084; dettaglio nel kit):
 
-- City verbs still name the act in the brain; the SDK sends `{"text": "..."}` with scalar `key=value` tokens
-- Nested objects (for example a nested `doctor` claim) do not survive that render
-- The citizen extracts scalar fields from the text; those fields drive choice against the registry
+- Nel brain i verbi della città nominano ancora l’atto; l’SDK invia `{"text": "..."}` con token scalari `chiave=valore`
+- Gli oggetti annidati (per esempio un claim `doctor` annidato) non sopravvivono a quel render
+- Il cittadino estrae i campi scalari dal testo; su quelli decide rispetto al registry
 
-Fluency is not scored. The judge scores Ledger and world facts only.
+La fluidità non è valutata. Il giudice valuta solo fatti di mondo e di Ledger.
 
-## Next
+## Avanti
 
-Back to the linear path: [Getting started](getting-started.md) → [Develop agents](develop-agents.md) → [Levels](../kit/levels.md) → [Rules](../kit/e19-rules.md). Glossary: [glossary.md](glossary.md).
+Tornate al percorso lineare: [Per iniziare](getting-started.md) → [Sviluppare agenti](develop-agents.md) → [Livelli](../kit/levels.md) → [Regole](../kit/e19-rules.md). Glossario: [glossary.md](glossary.md).

@@ -4,7 +4,7 @@
 city init agent gp
 ```
 
-Then set the card (and the same role in `city.yaml`):
+Poi impostate la card (e lo stesso ruolo in `city.yaml`):
 
 ```yaml
 role: gp
@@ -12,20 +12,20 @@ service_types:
   - gp
 ```
 
-## What the template already does
+## Cosa fa già il template
 
-1. Refuses clinical free text (`OutOfScope`).
-2. On a red flag / emergency: says `escalate.emergency reason=red_flag` to the citizen and stops.
-3. Looks up the symptom in the protocol table (from the Ledger `world` answer or the built-in rows).
-4. Issues the prescription: `prescribe patient=... procedure=... priority=...` to `city:ledger`.
-5. Tells the citizen and **closes** with `status="closed"` (level 1 ends here).
+1. Rifiuta il free text clinico (`OutOfScope`).
+2. Su red flag / emergenza: dice `escalate.emergency reason=red_flag` al cittadino e si ferma.
+3. Cerca il sintomo nella tabella di protocollo (dalla risposta Ledger `world` o dalle righe built-in).
+4. Emette la ricetta: `prescribe patient=... procedure=... priority=...` a `city:ledger`.
+5. Informa il cittadino e **chiude** con `status="closed"` (il livello 1 finisce qui).
 
-Renewal of an expired prescription (P1 / later levels) is the main place teams extend this brain.
+Il rinnovo di una ricetta scaduta (P1 / livelli successivi) è il punto principale in cui le squadre estendono questo brain.
 
-## Ledger acts you use
+## Atti Ledger che usate
 
-- `world` / protocol rows
+- `world` / righe di protocollo
 - `prescribe patient=... procedure=... priority=...`
-- `prescription prescription_number=...` when verifying
+- `prescription prescription_number=...` in verifica
 
-See [templates/agent/SKILL.md](../../templates/agent/SKILL.md) and [Closing a case](e19-rules.md#closing-a-case-adr-106).
+Vedere [templates/agent/SKILL.md](../../templates/agent/SKILL.md) e [Chiudere un caso](e19-rules.md#chiudere-un-caso-adr-106).

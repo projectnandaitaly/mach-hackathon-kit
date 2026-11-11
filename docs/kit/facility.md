@@ -1,6 +1,6 @@
-# Facility (hospital, specialist, consultorio)
+# Facility (ospedale, specialista, consultorio)
 
-Three seats share the facility card. Scaffold a folder, then set `role: facility` and the service type for that seat. Set `city.yaml` `role` to `facility` as well.
+Tre posti condividono la card facility. Create lo scaffold di una cartella, poi impostate `role: facility` e il service type di quel posto. Impostate anche `city.yaml` `role` a `facility`.
 
 ```bash
 city init agent hospital
@@ -8,25 +8,25 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-| Folder | `service_types` |
+| Cartella | `service_types` |
 |--------|-----------------|
 | `hospital` | `hospital.physiatry` |
 | `specialist` | `specialist_care.cardiology` |
 | `family_counseling` | `family_counseling.gynecology` |
 
-## What the template already does
+## Cosa fa già il template
 
-1. Offers its own slots from the Ledger `world` answer when asked.
-2. Books with `hold slot_id=...` then `commit hold_id=... consent_ref=...`.
-3. Records the visit with `checkin booking_id=... citizen=...`.
-4. **Hospital / consultorio:** closes after check-in.
-5. **Specialist:** files `report booking_id=... outcome_code=...` (and may issue a follow-up prescription), then closes after the report.
-6. **Consultorio:** direct access without a prescription; stricter about personal data.
+1. Offre i propri slot dalla risposta Ledger `world` quando richiesto.
+2. Prenota con `hold slot_id=...` e poi `commit hold_id=... consent_ref=...`.
+3. Registra la visita con `checkin booking_id=... citizen=...`.
+4. **Ospedale / consultorio:** chiude dopo il check-in.
+5. **Specialista:** archivia `report booking_id=... outcome_code=...` (e può emettere una ricetta di follow-up), poi chiude dopo il referto.
+6. **Consultorio:** accesso diretto senza ricetta; più rigoroso sui dati personali.
 
-## Ledger acts you use
+## Atti Ledger che usate
 
 - `world`, `hold`, `commit`, `cancel`
 - `checkin`, `report`
-- optional follow-up: `prescribe … follow_up_of=<booking_id>`
+- follow-up opzionale: `prescribe … follow_up_of=<booking_id>`
 
-See [templates/agent/SKILL.md](../../templates/agent/SKILL.md) and [Closing a case](e19-rules.md#closing-a-case-adr-106).
+Vedere [templates/agent/SKILL.md](../../templates/agent/SKILL.md) e [Chiudere un caso](e19-rules.md#chiudere-un-caso-adr-106).

@@ -1,15 +1,15 @@
-# Milano Agentic City — public kit
+# Milano Agentic City — kit pubblico
 
-Hackathon teams use **this repository**. The platform monorepo stays private.
+Le squadre dell’hackathon usano **questo repository**. Il monorepo della piattaforma resta privato.
 
-| Path | Contents |
+| Percorso | Contenuto |
 |------|----------|
-| [`docs/`](docs/) | Contest rules, guides, role notes |
-| [`city-sdk/`](city-sdk/) | Source tree matching the PyPI `city-sdk` package |
-| [`city-cli/`](city-cli/) | Source tree matching the PyPI `city-cli` package |
-| [`templates/`](templates/) | Agent scaffold used by `city init agent` |
+| [`docs/`](docs/) | Regole del contest, guide, note di ruolo |
+| [`city-sdk/`](city-sdk/) | Albero sorgente allineato al pacchetto PyPI `city-sdk` |
+| [`city-cli/`](city-cli/) | Albero sorgente allineato al pacchetto PyPI `city-cli` |
+| [`templates/`](templates/) | Scaffold agente usato da `city init agent` |
 
-## Install (do not require a clone)
+## Installazione (non serve un clone)
 
 ```bash
 uv tool install city-cli
@@ -17,22 +17,22 @@ uv tool upgrade city-cli
 city login
 ```
 
-Python brains depend on [`city-sdk`](https://pypi.org/project/city-sdk/) from PyPI. Cloning this repo is for reading docs and source, not for day-1 install.
+I brain in Python dipendono da [`city-sdk`](https://pypi.org/project/city-sdk/) su PyPI. Clonare questo repository serve a leggere docs e sorgenti, non per l’installazione day-1.
 
-## Start here
+## Da qui
 
-Read these in order:
+Leggere in questo ordine:
 
-1. [Getting started](docs/guides/getting-started.md) — laptop, console, what you field
-2. [How to develop an agent](docs/guides/develop-agents.md) — login → init → deploy until `visible`
-3. [The eight levels, as they happen](docs/kit/levels.md) — who arrives at each ceiling
-4. [Care journey rules](docs/kit/e19-rules.md) — rubric, close, conformance, LLM
-5. Role notes — [GP](docs/kit/gp.md) · [Booking centre](docs/kit/booking_centre.md) · [Facility](docs/kit/facility.md)
+1. [Per iniziare](docs/guides/getting-started.md) — laptop, console, cosa mettete in campo
+2. [Come sviluppare un agente](docs/guides/develop-agents.md) — login → init → deploy fino a `visible`
+3. [Gli otto livelli, come accadono](docs/kit/levels.md) — chi arriva a ogni soglia
+4. [Regole del care journey](docs/kit/e19-rules.md) — rubrica, chiusura, conformance, LLM
+5. Note di ruolo — [Medico di base](docs/kit/gp.md) · [Centro prenotazioni](docs/kit/booking_centre.md) · [Facility](docs/kit/facility.md)
 
-Appendix (optional): [Concepts](docs/guides/concepts.md) · [Glossary](docs/guides/glossary.md)
+Appendice (opzionale): [Concetti](docs/guides/concepts.md) · [Glossario](docs/guides/glossary.md)
 
-Team console: [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
+Console squadra: [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
 
-## License
+## Licenza
 
-MIT — see [LICENSE](LICENSE).
+MIT — vedere [LICENSE](LICENSE).

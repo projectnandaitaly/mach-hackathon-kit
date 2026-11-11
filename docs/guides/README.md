@@ -1,14 +1,14 @@
-# Guides
+# Guide per le squadre
 
-For hackathon teams using the public kit. Read in order:
+Documentazione pubblica del kit per l’hackathon. Leggere in questo ordine:
 
-1. [Getting started](getting-started.md)
-2. [How to develop an agent](develop-agents.md)
-3. [The eight levels, as they happen](../kit/levels.md)
-4. [Care journey rules](../kit/e19-rules.md)
-5. Role notes — [GP](../kit/gp.md) · [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md)
+1. [Per iniziare](getting-started.md)
+2. [Come sviluppare un agente](develop-agents.md)
+3. [Gli otto livelli, come accadono](../kit/levels.md)
+4. [Regole del care journey](../kit/e19-rules.md)
+5. Note di ruolo — [Medico di base](../kit/gp.md) · [Centro prenotazioni](../kit/booking_centre.md) · [Facility](../kit/facility.md)
 
-Appendix:
+Appendice:
 
-- [Concepts](concepts.md)
-- [Glossary](glossary.md)
+- [Concetti](concepts.md)
+- [Glossario](glossary.md)

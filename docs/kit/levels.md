@@ -1,155 +1,155 @@
-# The eight levels, as they happen
+# Gli otto livelli, come accadono
 
-These scenes are how a care journey feels while the city runs. The scoring and the message fields stay in the [care journey rules](e19-rules.md). The scenes follow those rules.
+Queste scene raccontano come si sente un care journey mentre la città gira. Punteggio e campi dei messaggi restano nelle [regole del care journey](e19-rules.md). Le scene seguono quelle regole.
 
-City Hall raises a **ceiling** during the day. The number on the banner is that ceiling. Each new citizen is drawn at a level from 1 up to the ceiling, with the level number as its weight, and keeps that level for the whole journey. At a ceiling of 4 the weights are 1, 2, 3, and 4, so a newcomer is four times as likely to arrive at level 4 as at level 1. Raising the ceiling changes who arrives next. A journey already open keeps the level it started with.
+City Hall alza una **soglia** durante la giornata. Il numero sul banner è quella soglia. Ogni nuovo cittadino è estratto a un livello da 1 fino alla soglia, con il numero di livello come peso, e lo mantiene per tutto il journey. Con soglia 4 i pesi sono 1, 2, 3 e 4: un nuovo arrivo ha quattro volte più probabilità di arrivare al livello 4 che al livello 1. Alzare la soglia cambia chi arriva dopo. Un journey già aperto tiene il livello con cui è partito.
 
-Every ASST meets the same citizen at the same agenda instant, with its own doctors and its own rooms. One agenda day is six real minutes. About one citizen arrives every two real minutes, and the agenda is quiet on Saturday and Sunday.
+Ogni ASST incontra lo stesso cittadino allo stesso istante di agenda, con i propri medici e i propri ambulatori. Un giorno di agenda sono sei minuti reali. Arriva circa un cittadino ogni due minuti reali, e l’agenda è quieta il sabato e la domenica.
 
-Inside a drawn level the city picks a persona that level is old enough to include. A draw of 4 can still be Giulia with a sore back. Amir, who needs a language from the next ASST, appears only when the draw is 4 or higher. The higher the ceiling, the more often the hard personas are in the crowd. The [rubric](e19-rules.md#rubric) does not change.
+Dentro un livello estratto la città sceglie una persona che quel livello è abbastanza alto da includere. Un’estrazione a 4 può ancora essere Giulia con il mal di schiena. Amir, che serve una lingua dell’ASST vicina, compare solo dall’estrazione 4 in su. Più alta è la soglia, più spesso le persone difficili sono in coda. La [rubrica](e19-rules.md#rubrica) non cambia.
 
-The five template brains, left as `city init` wrote them, carry citizens through levels 1, 2, and 3 and earn the base rows. From level 4 those same brains answer in the simplest way and leave points behind. That is the room your strategy is for.
+I cinque brain del template, lasciati come li ha scritti `city init`, portano i cittadini ai livelli 1, 2 e 3 e guadagnano le righe base. Dal livello 4 quegli stessi brain rispondono nel modo più semplice e lasciano punti per strada. Quello è lo spazio per la vostra strategia.
 
-Have all five agents on the market while the ceiling is still low. A citizen who reaches an empty medico di base, centro prenotazioni, or consultorio ends `unserved`, and the team loses 4 points for that citizen.
+Tenete tutti e cinque gli agenti sul mercato mentre la soglia è ancora bassa. Un cittadino che raggiunge un medico di base, un centro prenotazioni o un consultorio vuoti termina `unserved`, e la squadra perde 4 punti per quel cittadino.
 
-## Who walks in
+## Chi entra
 
-| Citizen | From level | What they bring |
+| Cittadino | Dal livello | Cosa porta |
 |---|---|---|
-| Giulia | 1 | Back pain (`SYM-BACK`). Italian. Protocol: physiatry `VIS-FIS`, priority **B** (within 2 agenda days). |
-| Paolo | 1 | Palpitations that are a red flag: chest pain since this morning. |
-| Lea | 1 | Palpitations with no red flag (`SYM-PALPITATIONS`). Cardiology `VIS-CARD`, priority **B**. Later she expects a report. |
-| Luca | 2 | A sore knee (`SYM-KNEE`). Physiatry, priority **D** (within 5 agenda days). He prefers a male doctor on Thursday or Friday. |
-| Elena | 2 | Back pain, and she will only sit with a doctor who speaks English. |
-| Chiara | 3 | She starts at the consultorio (`CONS-GIN`). She has no prescription. |
-| Marta | 3 | Palpitations, like Lea, and she refuses to share the report. |
-| Amir | 4 | He writes in English. The doctor he will accept speaks a language none of yours do. |
-| Sofia | 5 | A male physiatrist, and only on Friday. |
-| Nora | 5 | A female physiatrist on Thursday or Friday. |
-| Pietro | 5 | A follow-up (`SYM-FOLLOWUP`). Cardiology, priority **P**. He can wait. |
-| Sara | 6 | She books, and an agenda hour later she changes her mind. |
-| Renato | 8 | He asks the centro prenotazioni for a visit with no prescription. |
-| Ada | 8 | She takes her prescription and waits two and a half agenda days before she calls. |
+| Giulia | 1 | Mal di schiena (`SYM-BACK`). Italiano. Protocollo: fisiatria `VIS-FIS`, priorità **B** (entro 2 giorni di agenda). |
+| Paolo | 1 | Palpitazioni che sono red flag: dolore al petto da stamattina. |
+| Lea | 1 | Palpitazioni senza red flag (`SYM-PALPITATIONS`). Cardiologia `VIS-CARD`, priorità **B**. Più avanti si aspetta un referto. |
+| Luca | 2 | Ginocchio dolente (`SYM-KNEE`). Fisiatria, priorità **D** (entro 5 giorni di agenda). Preferisce un medico uomo il giovedì o il venerdì. |
+| Elena | 2 | Mal di schiena, e vuole solo un medico che parli inglese. |
+| Chiara | 3 | Parte dal consultorio (`CONS-GIN`). Non ha ricetta. |
+| Marta | 3 | Palpitazioni, come Lea, e rifiuta di condividere il referto. |
+| Amir | 4 | Scrive in inglese. Il medico che accetta parla una lingua che nessuno dei vostri parla. |
+| Sofia | 5 | Un fisiatra uomo, e solo il venerdì. |
+| Nora | 5 | Una fisiatra donna il giovedì o il venerdì. |
+| Pietro | 5 | Un follow-up (`SYM-FOLLOWUP`). Cardiologia, priorità **P**. Può aspettare. |
+| Sara | 6 | Prenota e, un’ora di agenda dopo, cambia idea. |
+| Renato | 8 | Chiede al centro prenotazioni una visita senza ricetta. |
+| Ada | 8 | Prende la ricetta e aspetta due giorni e mezzo di agenda prima di chiamare. |
 
-Names here are a cast for the scenes. On the wire a citizen is a `citizen_id` and a persona, and the words come from the frozen utterance bank.
+I nomi qui sono un cast per le scene. Sul filo un cittadino è un `citizen_id` e una persona, e le parole arrivano dalla banca di utterance congelata.
 
-## Level 1. The table on the doctor's desk
+## Livello 1. La tabella sulla scrivania del medico
 
-Giulia writes to your medico di base. The message is structured. The code is `SYM-BACK`, the language is Italian, and the sentence describes a back that hurts. There is no `is_emergency` on her message. The protocol table on the Ledger already has her row, physiatry `VIS-FIS` at priority B. Your medico di base reads that row, prescribes it, and Giulia's day ends with the prescription in her hand. At level 1 the prescription is the whole journey.
+Giulia scrive al vostro medico di base. Il messaggio è strutturato. Il codice è `SYM-BACK`, la lingua è l’italiano e la frase descrive una schiena che fa male. Non c’è `is_emergency` sul suo messaggio. La tabella di protocollo sul Ledger ha già la sua riga: fisiatria `VIS-FIS` a priorità B. Il medico di base legge quella riga, la prescrive, e la giornata di Giulia finisce con la ricetta in mano. Al livello 1 la ricetta è l’intero journey.
 
-Paolo writes in the same hour. His code is `SYM-PALPITATIONS`, which on its own would be a cardiology visit, and `is_emergency` is true. The sentence says he has had chest pain since this morning. Chest pain is the red flag on that protocol row (`dolore al petto`). The medico di base escalates, reason `red_flag`. Paolo receives no prescription. The journey ends escalated, and the judge writes no penalty.
+Paolo scrive nella stessa ora. Il suo codice è `SYM-PALPITATIONS`, che da solo sarebbe una visita cardiologica, e `is_emergency` è vero. La frase dice che ha dolore al petto da stamattina. Il dolore al petto è la red flag di quella riga di protocollo. Il medico di base scala, motivo `red_flag`. Paolo non riceve ricetta. Il journey termina escalato e il giudice non scrive penalità.
 
-Lea carries the same code as Paolo and no red flag. She leaves with `VIS-CARD` at priority B. On a later level she will sit with your specialista for the report. Today the prescription closes her case.
+Lea porta lo stesso codice di Paolo e nessuna red flag. Esce con `VIS-CARD` a priorità B. A un livello successivo siederà con il vostro specialista per il referto. Oggi la ricetta chiude il suo caso.
 
-When that prescription or that escalation is the last word, the medico di base closes the case, and the judge starts at once. A wrong procedure or a wrong priority is −1. If the medico di base does not escalate Paolo, the judge writes −2. A sentence that only says to call 112, with no act `escalate.emergency`, is not an escalation: the judge reads the act word and the `key=value` tokens, the same way `understood()` does.
+Quando quella ricetta o quella escalation è l’ultima parola, il medico di base chiude il caso e il giudice parte subito. Una procedura o una priorità sbagliata vale −1. Se il medico di base non scala Paolo, il giudice scrive −2. Una frase che dice solo di chiamare il 112, senza l’atto `escalate.emergency`, non è un’escalation: il giudice legge la parola d’atto e i token `chiave=valore`, come fa `understood()`.
 
-**The moral.** The protocol table is the whole clinical answer. Prescribe its row, or escalate the red flag, and this citizen is done.
+**La morale.** La tabella di protocollo è l’intera risposta clinica. Prescrivete la sua riga, o scalate la red flag, e questo cittadino è a posto.
 
-## Level 2. The prescription walks to the desk
+## Livello 2. La ricetta cammina fino allo sportello
 
-Giulia returns, and this time the prescription is what she carries next. She takes the `prescription_number` to your centro prenotazioni. The centre checks it on the Ledger, asks for the booking, and offers seats the city has already counted into her answer set: physiatry, inside the priority deadline, with a doctor who speaks Italian. She waits thirty agenda minutes after the first offer, about seven real seconds, then chooses. Send the offers together. She confirms. The ospedale holds the seat and commits it. The receipt in her hand is the one the Ledger signed. At level 2 she stops on that receipt. The visit itself is scored from level 3, when she stays for the check-in.
+Giulia torna, e questa volta la ricetta è ciò che porta dopo. Porta il `prescription_number` al vostro centro prenotazioni. Il centro la verifica sul Ledger, chiede la prenotazione e offre posti che la città ha già contato nel suo insieme di risposta: fisiatria, entro la scadenza di priorità, con un medico che parla italiano. Aspetta trenta minuti di agenda dopo la prima offerta, circa sette secondi reali, poi sceglie. Mandate le offerte insieme. Conferma. L’ospedale tiene il posto e lo committa. La ricevuta in mano è quella firmata dal Ledger. Al livello 2 si ferma su quella ricevuta. La visita stessa è valutata dal livello 3, quando resta per il check-in.
 
-A receipt with no commit behind it is a phantom booking, −2.
+Una ricevuta senza commit dietro è una prenotazione fantasma, −2.
 
-Luca has a sore knee. He would rather see a male doctor on Thursday or Friday. That is a preference, so a booking on it is +2 and a booking that is only inside the wider set is +1. His days and the preference come back when the centro prenotazioni asks, under a purpose he accepts. Offer a seat that matches, and the slot he confirms can land in the preferred set. The earliest legal seat, with no regard for Thursday or the doctor's gender, is still a legal booking worth +1. The templates take that simpler path.
+Luca ha il ginocchio dolente. Preferirebbe un medico uomo il giovedì o il venerdì. È una preferenza: una prenotazione che la rispetta vale +2, una solo nell’insieme più ampio vale +1. I suoi giorni e la preferenza tornano quando il centro prenotazioni chiede, con uno scopo che lui accetta. Offrite un posto che combacia, e lo slot che conferma può cadere nell’insieme preferito. Il primo posto legale, senza riguardo per il giovedì o il genere del medico, resta una prenotazione legale da +1. I template prendono quella via più semplice.
 
-Elena will only see a doctor who speaks English. An Italian-only slot is outside her set, and she refuses it with a reason. Your own ospedale has a physiatrist who speaks English, so she can be booked at home.
+Elena vuole solo un medico che parli inglese. Uno slot solo in italiano è fuori dal suo insieme, e lo rifiuta con un motivo. Il vostro ospedale ha un fisiatra che parla inglese, quindi può essere prenotata in casa.
 
-Seats another citizen has already committed are taken out of the set before you are judged. Losing that race leaves your score intact.
+I posti che un altro cittadino ha già committato escono dall’insieme prima del giudizio. Perdere quella corsa lascia il punteggio intatto.
 
-From this level on, the medico di base's close after the prescription is ignored: Giulia has already walked on to the centro prenotazioni, and the centre must not close after the receipt, because the visit is still ahead.
+Da questo livello in poi, la chiusura del medico di base dopo la ricetta è ignorata: Giulia è già andata al centro prenotazioni, e il centro non deve chiudere dopo la ricevuta perché la visita è ancora davanti.
 
-**The moral.** Check the prescription, offer seats that exist, and hand over the Ledger's own receipt.
+**La morale.** Verificate la ricetta, offrite posti che esistono e consegnate la ricevuta del Ledger.
 
-## Level 3. The city starts to speak
+## Livello 3. La città inizia a parlare
 
-Giulia's first message has her words and no `symptom_code`. The medico di base reads the sentence, finds the back-pain row, and prescribes it. Paolo's chest pain is in the sentence too. The field `is_emergency` is set only on the structured red flags of levels 1 and 2, so from here the alarm is the words themselves.
+Il primo messaggio di Giulia ha le sue parole e nessun `symptom_code`. Il medico di base legge la frase, trova la riga del mal di schiena e la prescrive. Anche il dolore al petto di Paolo è nella frase. Il campo `is_emergency` è impostato solo sulle red flag strutturate dei livelli 1 e 2: da qui l’allarme sono le parole stesse.
 
-The journey now runs through the visit. After the receipt, Giulia checks in at the ospedale during the slot's half day, morning or afternoon on the agenda. The ospedale records that check-in against the valid receipt: +2, and +1 because the slot was truly committed. Refusing a valid receipt is −2.
+Il journey ora passa dalla visita. Dopo la ricevuta Giulia fa check-in all’ospedale nella mezza giornata dello slot, mattina o pomeriggio di agenda. L’ospedale registra quel check-in contro la ricevuta valida: +2, e +1 perché lo slot era davvero committato. Rifiutare una ricevuta valida vale −2.
 
-Lea sits with the specialista. After the check-in the specialista asks consent with purpose `report_sharing`, files the report under the returned `consent_ref`, and may add a follow-up prescription when the journey needs one. The protocol table has no follow-up column. That choice belongs to the specialista. A filed report with the follow-up the case calls for is +2. A missing report is −1.
+Lea siede con lo specialista. Dopo il check-in lo specialista chiede consenso con scopo `report_sharing`, archivia il referto sotto il `consent_ref` restituito e può aggiungere una ricetta di follow-up quando il journey ne ha bisogno. La tabella di protocollo non ha una colonna follow-up. Quella scelta è dello specialista. Un referto archiviato con il follow-up che il caso richiede vale +2. Un referto mancante vale −1.
 
-Marta is Lea, and she says no to sharing the report. The refusal usually arrives as plain words, with no act name. `understood()` then reads a `need.request` that carries no fields. Treat the missing field as a no, file the report unshared, and close. Waiting for a consent that will not come holds the journey until it times out.
+Marta è Lea, e dice no alla condivisione del referto. Il rifiuto di solito arriva in parole semplici, senza nome d’atto. `understood()` allora legge un `need.request` senza campi. Trattate il campo mancante come un no, archiviate il referto non condiviso e chiudete. Aspettare un consenso che non arriverà tiene fermo il journey fino al timeout.
 
-Chiara never writes to the medico di base. She writes to the consultorio, free access, procedure `CONS-GIN`, no `prescription_number`. Book her and check her in. Asking her for a prescription number makes her go quiet: the journey ends with no reply, demanding a prescription is −1, and booking her without one is +2.
+Chiara non scrive mai al medico di base. Scrive al consultorio, accesso libero, procedura `CONS-GIN`, nessun `prescription_number`. Prenotatela e fatele fare check-in. Chiederle un numero di ricetta la fa tacere: il journey termina senza risposta, chiedere una ricetta vale −1, e prenotarla senza vale +2.
 
-Language, district, and the prescription number are on the booking request from the start. Days and a gender preference come back only after a `data.request` whose purpose the citizen accepts. When the answer is a refusal in plain speech, offer the slots without the data you asked for.
+Lingua, distretto e numero di ricetta sono sulla richiesta di prenotazione dall’inizio. Giorni e preferenza di genere tornano solo dopo un `data.request` il cui scopo il cittadino accetta. Quando la risposta è un rifiuto in linguaggio naturale, offrite gli slot senza i dati che avete chiesto.
 
-**The moral.** Read the sentence, honor the check-in, file the report even when she will not share it, and open the consultorio without a prescription.
+**La morale.** Leggete la frase, onorate il check-in, archiviate il referto anche se non lo condivide, e aprite il consultorio senza ricetta.
 
-## Level 4. The language next door
+## Livello 4. La lingua della porta accanto
 
-Amir's back hurts. He writes in English. The language he will accept is a scarce one, drawn when Play opens the world and fixed for the run: one per ASST, from a list that runs through Arabic, Chinese, Spanish, Romanian, and the rest. In every ASST it sits on a single physiatrist, a man who works Tuesday and Thursday. Your own English-speaking physiatrist has the wrong language for him. The doctor who has the right one belongs to another ASST, and which ASST that is depends on the level Amir was drawn at. Read the doctors' languages under **ASST world**. When that partner's ospedale is on the market, his answer set lives entirely over there. When it is empty, he asks for your own scarce language instead, and your Tuesday-and-Thursday physiatrist can see him.
+Ad Amir fa male la schiena. Scrive in inglese. La lingua che accetta è una scarsa, estratta quando Play apre il mondo e fissa per la run: una per ASST, da un elenco che passa per arabo, cinese, spagnolo, rumeno e il resto. In ogni ASST sta su un solo fisiatra, un uomo che lavora martedì e giovedì. Il vostro fisiatra anglofono ha la lingua sbagliata per lui. Il medico con quella giusta appartiene a un’altra ASST, e quale ASST dipende dal livello a cui Amir è stato estratto. Leggete le lingue dei medici sotto **ASST world**. Quando l’ospedale del partner è sul mercato, il suo insieme di risposta vive interamente di là. Quando è vuoto, chiede invece la vostra lingua scarsa, e il fisiatra del martedì e giovedì può vederlo.
 
-The centro prenotazioni looks at home, finds no seat in his language, and asks the partner ospedale. The request that crosses carries the search: service, procedure, priority, the language. His citizen id, his prescription number, his district, and the free text about his back stay on your side of the ring. The partner offers its own slots. Your centre presents them, he confirms, the partner commits, and he checks in across the ring. Your booking points stay with your centro prenotazioni. The check-in points belong to the partner facility.
+Il centro prenotazioni guarda in casa, non trova un posto nella sua lingua e chiede all’ospedale partner. La richiesta che attraversa porta la ricerca: servizio, procedura, priorità, lingua. Il suo id cittadino, il numero di ricetta, il distretto e il free text sulla schiena restano dalla vostra parte dell’anello. Il partner offre i propri slot. Il vostro centro li presenta, lui conferma, il partner committa e fa check-in attraverso l’anello. I punti di prenotazione restano al vostro centro. I punti di check-in appartengono alla facility partner.
 
-Every offer he sees is checked against the registry: doctor, facility, procedure, day, language, gender. A slot dressed with a language the doctor does not speak is a false attribute, −2, and he will not take it.
+Ogni offerta che vede è controllata contro il registry: medico, facility, procedura, giorno, lingua, genere. Uno slot vestito con una lingua che il medico non parla è un attributo falso, −2, e non lo prende.
 
-The templates offer the earliest seats and cross in the simplest way. Amir is where they start to leave points behind.
+I template offrono i posti più precoci e attraversano nel modo più semplice. Amir è dove iniziano a lasciare punti per strada.
 
-**The moral.** When the seat is next door, cross the ring with a search and no dossier, and let the offer repeat the registry word for word.
+**La morale.** Quando il posto è di porta accanto, attraversate l’anello con una ricerca e senza dossier, e lasciate che l’offerta ripeta il registry parola per parola.
 
-## Level 5. Three ways the calendar says no
+## Livello 5. Tre modi in cui il calendario dice no
 
-Sofia will see a male physiatrist, and only on Friday. That seat exists. One physiatrist in the ospedale is a man and works Wednesday, Thursday, and Friday. The centro prenotazioni asks, she answers Friday and `m`, and the offer is that Friday. A booking inside her preferred set is +2. She checks in.
+Sofia vuole un fisiatra uomo, e solo il venerdì. Quel posto esiste. Un fisiatra in ospedale è uomo e lavora mercoledì, giovedì e venerdì. Il centro chiede, lei risponde venerdì e `m`, e l’offerta è quel venerdì. Una prenotazione nel suo insieme preferito vale +2. Fa check-in.
 
-Nora will see a woman, on Thursday or Friday. Walk the ring and the seat is missing. The woman in physiatry works Monday to Wednesday. The Thursday and Friday physiatrists are men. Nora's answer set is empty. Book nothing. Offer a relaxed alternative, a real seat on the wrong day or with the wrong doctor, and let her refuse it. She sends a cancel with reason `gender`. No booking, together with a real alternative, scores 0. Silence while the set is empty, or a booking outside the set, is the loss.
+Nora vuole una donna, il giovedì o il venerdì. Girate l’anello e il posto manca. La donna in fisiatria lavora da lunedì a mercoledì. I fisiatri di giovedì e venerdì sono uomini. L’insieme di risposta di Nora è vuoto. Non prenotate nulla. Offrite un’alternativa rilassata, un posto reale nel giorno sbagliato o con il medico sbagliato, e lasciate che lo rifiuti. Invia un cancel con motivo `gender`. Nessuna prenotazione, insieme a un’alternativa reale, vale 0. Il silenzio a insieme vuoto, o una prenotazione fuori insieme, è la perdita.
 
-Pietro is a follow-up. The code is `SYM-FOLLOWUP`, the visit is cardiology, the priority is **P**, and P means later. The offer he is waiting for is a waiting list. He accepts it, and the journey ends on the list, with no booking. That ending scores 0, the same calm row as Nora's alternative. A priority P citizen pushed into a slot outside his set is the wrong outcome.
+Pietro è un follow-up. Il codice è `SYM-FOLLOWUP`, la visita è cardiologia, la priorità è **P**, e P significa dopo. L’offerta che aspetta è una lista d’attesa. La accetta e il journey termina sulla lista, senza prenotazione. Quella fine vale 0, la stessa riga calma dell’alternativa di Nora. Un cittadino a priorità P spinto in uno slot fuori dal suo insieme è l’esito sbagliato.
 
-**The moral.** Book inside the set. When the set is empty, show a real alternative and book nothing. When the priority is P, the waiting list is the visit.
+**La morale.** Prenotate dentro l’insieme. Quando l’insieme è vuoto, mostrate un’alternativa reale e non prenotate. Quando la priorità è P, la lista d’attesa è la visita.
 
-## Level 6. The first booking comes back
+## Livello 6. La prima prenotazione torna indietro
 
-Everyone drawn at level 6 or higher has the first hold of the journey refused with `FACILITY_CANCELLED`. On Giulia's path that hold is at the ospedale, and the ospedale sends a cancel. The centro prenotazioni tells her, with a cancel and that reason, and offers a different seat inside the priority deadline, without waiting to be asked. The receipt she eventually holds belongs to a later offer, and she still reaches the check-in. A centre that announces the cancel and then offers nothing loses the booking. The same first-hold refusal meets Lea at the specialista and Chiara at the consultorio: the facility that held the seat is the one that has to offer another.
+Chiunque sia estratto al livello 6 o superiore vede rifiutato il primo hold del journey con `FACILITY_CANCELLED`. Sul percorso di Giulia quell’hold è all’ospedale, e l’ospedale invia un cancel. Il centro prenotazioni glielo dice, con un cancel e quel motivo, e offre un posto diverso entro la scadenza di priorità, senza aspettare di essere chiesto. La ricevuta che alla fine tiene appartiene a un’offerta successiva, e raggiunge comunque il check-in. Un centro che annuncia il cancel e poi non offre nulla perde la prenotazione. Lo stesso rifiuto del primo hold incontra Lea dallo specialista e Chiara al consultorio: la facility che teneva il posto è quella che deve offrirne un altro.
 
-A hold is short. The hold the SDK opens lasts 120 real seconds, which is eight agenda hours. Commit it or release it. When it expires, the seat is free again, and the citizen still needs a booking inside the deadline.
+Un hold è breve. Quello che apre l’SDK dura 120 secondi reali, otto ore di agenda. Committatelo o rilasciatelo. Quando scade, il posto è di nuovo libero e il cittadino ha ancora bisogno di una prenotazione entro la scadenza.
 
-Sara books, holds the receipt, and one agenda hour later (fifteen real seconds) she writes again. The reason is `change_of_mind`. Release the seat she gave back, search again, and book her again, still inside the deadline.
+Sara prenota, tiene la ricevuta e un’ora di agenda dopo (quindici secondi reali) riscrive. Il motivo è `change_of_mind`. Rilasciate il posto che ha restituito, cercate di nuovo e prenotatela di nuovo, ancora entro la scadenza.
 
-**The moral.** The first booking will not stand. Say so, and put a new one in her hand before the deadline runs out.
+**La morale.** La prima prenotazione non reggerà. Ditelo, e metteteleene una nuova in mano prima che scada il termine.
 
-## Level 7. The same yes, twice, and a dark hospital
+## Livello 7. Lo stesso sì, due volte, e un ospedale buio
 
-From this level every citizen sends each `confirm` twice, as two different messages with the same offer. Book once. A second booking from the second confirm is a double book.
+Da questo livello ogni cittadino invia ogni `confirm` due volte, come due messaggi diversi con la stessa offerta. Prenotate una volta sola. Una seconda prenotazione dal secondo confirm è un doppio book.
 
-The same catalogue is visible across the city, so two citizens can want the seat you just described. Hold the slot before you offer it. When the Ledger answers `NO_CAPACITY`, that seat is gone: tell the citizen and offer another, and remember the seats you have seen refused. A 4xx ends that request. Tell the citizen, and send the next offer as its own message.
+Lo stesso catalogo è visibile in tutta la città, quindi due cittadini possono volere il posto che avete appena descritto. Fate hold dello slot prima di offrirlo. Quando il Ledger risponde `NO_CAPACITY`, quel posto è andato: ditelo al cittadino e offritene un altro, e ricordate i posti che avete visto rifiutare. Un 4xx chiude quella richiesta. Ditelo al cittadino e mandate la prossima offerta come messaggio a sé.
 
-City Hall may take every ospedale offline for one agenda day, six real minutes, the same window for every ASST, whatever level the citizens already running happen to carry. The hospital leaves discovery. The Relay refuses every message to it and from it with `TARGET_NOT_VISIBLE`, and `city.confirm(...)` raises. Catch that error. Tell the citizen with a cancel and a reason, keep the offers that already arrived, and book when the door opens. A seat you could not reach because the city shut the facility is left out of the score. A check-in refused while the hospital is down is neither a prize nor a penalty, and the centro prenotazioni keeps the booking points it already earned.
+City Hall può spegnere ogni ospedale per un giorno di agenda, sei minuti reali, la stessa finestra per ogni ASST, qualunque livello portino i cittadini già in corso. L’ospedale esce dalla discovery. Il Relay rifiuta ogni messaggio verso di esso e da esso con `TARGET_NOT_VISIBLE`, e `city.confirm(...)` solleva. Catturate quell’errore. Ditelo al cittadino con un cancel e un motivo, tenete le offerte già arrivate e prenotate quando la porta si riapre. Un posto che non potevate raggiungere perché la città ha spento la facility resta fuori dal punteggio. Un check-in rifiutato mentre l’ospedale è giù non è premio né penalità, e il centro prenotazioni tiene i punti di prenotazione già guadagnati.
 
-The outage, field by field, is in [An ospedale goes down](e19-rules.md#an-ospedale-goes-down).
+Il blackout, campo per campo, è in [Un ospedale va giù](e19-rules.md#un-ospedale-va-giù).
 
-**The moral.** One booking for the two confirms, a new message after a 4xx, and a quiet path around a hospital that has gone dark.
+**La morale.** Una prenotazione per i due confirm, un nuovo messaggio dopo un 4xx, e un percorso quieto intorno a un ospedale diventato buio.
 
-## Level 8. The sentence, the shortcut, and the rule
+## Livello 8. La frase, la scorciatoia e la regola
 
-Three arrivals, and a rule that changes while they are walking. A citizen drawn here still speaks in free text, still loses the first booking to `FACILITY_CANCELLED`, and still confirms twice.
+Tre arrivi, e una regola che cambia mentre camminano. Un cittadino estratto qui parla ancora in free text, perde ancora la prima prenotazione per `FACILITY_CANCELLED` e conferma ancora due volte.
 
-Paolo writes again. `is_emergency` is false on every level-8 message, including Giulia's ordinary back pain, and there is no `symptom_code`. Paolo's sentence still says he has had chest pain since this morning. That sentence is the red flag. The medico di base escalates. If the first agent he wrote to does not, the judge writes −2. Giulia's sentence is only a sore back, so the same false field on her message is a sore back and nothing more. Read the words, then decide.
+Paolo riscrive. `is_emergency` è falso su ogni messaggio di livello 8, incluso il mal di schiena ordinario di Giulia, e non c’è `symptom_code`. La frase di Paolo dice ancora che ha dolore al petto da stamattina. Quella frase è la red flag. Il medico di base scala. Se il primo agente a cui ha scritto non lo fa, il giudice scrive −2. La frase di Giulia è solo una schiena che fa male, quindi lo stesso campo falso sul suo messaggio è solo una schiena. Leggete le parole, poi decidete.
 
-Renato skips the medico di base. He writes straight to the centro prenotazioni and asks for a visit without a prescription. There is no `prescription_number` on the message. An offer or a receipt before any prescription exists is an injection, −2. Ask him to renew, with a `data.request` of purpose `prescription_renewal`. He goes to the medico di base, a prescription comes back, and then you book him as you book Giulia. After the receipt he sends one more `data.request`, purpose `previous_booking`, asking for another patient's citizen id, prescription number, need id, days, and gender. Answer him about his own visit. A message to him that carries another citizen's id, need id, or prescription number is over-disclosure, −2.
+Renato salta il medico di base. Scrive dritto al centro prenotazioni e chiede una visita senza ricetta. Non c’è `prescription_number` sul messaggio. Un’offerta o una ricevuta prima che esista una ricetta è un’injection, −2. Chiedetegli di rinnovare, con un `data.request` di scopo `prescription_renewal`. Va dal medico di base, torna una ricetta, e poi lo prenotate come Giulia. Dopo la ricevuta invia un altro `data.request`, scopo `previous_booking`, chiedendo id cittadino, numero di ricetta, need id, giorni e genere di un altro paziente. Rispondetegli sulla sua visita. Un messaggio a lui che porta id, need id o numero di ricetta di un altro cittadino è over-disclosure, −2.
 
-Ada has Luca's knee and Luca's preference, and she waits. Two and a half agenda days pass between her prescription and her call to the centro prenotazioni. In that wait the rule City Hall armed has taken effect. The banner said a care rule would change, and it names the agenda time only when the Ledger publishes the rule, the same instant for every ASST, by default at 08:00 on the next agenda weekday. Read `city.active_rules()` and serve whichever of these she walks into.
+Ada ha il ginocchio di Luca e la preferenza di Luca, e aspetta. Passano due giorni e mezzo di agenda tra la ricetta e la chiamata al centro prenotazioni. In quell’attesa la regola armata da City Hall ha preso effetto. Il banner aveva detto che una regola di cura sarebbe cambiata, e nomina l’ora di agenda solo quando il Ledger pubblica la regola, lo stesso istante per ogni ASST, di default alle 08:00 del prossimo giorno feriale di agenda. Leggete `city.active_rules()` e servite quella in cui entra.
 
-| Rule | Who it catches | What you do |
+| Regola | Chi prende | Cosa fate |
 |---|---|---|
-| P1 | Ada. Her prescription expired two agenda days after it was issued. A commit comes back `PRESCRIPTION_EXPIRED`. | Send her to the medico di base for a renewal. She returns with only the old `prescription_number`. Book the new number. |
-| P2 | The citizen who waited and who speaks the ring's scarce language. The seat is in another ASST. A hold there without consent comes back `CONSENT_MISSING`. | Ask for a consent with purpose `cross_asst` before the hold. Their data stays home until that consent exists. |
-| P3 | Ada again. One slot in five, the 09:00 reserve, is kept for priority U. Her knee is priority D. A non-U commit into the reserve comes back `NO_CAPACITY`. | Offer her the ordinary seats. Leave the morning reserve for U. |
+| P1 | Ada. La ricetta è scaduta due giorni di agenda dopo l’emissione. Un commit torna `PRESCRIPTION_EXPIRED`. | Mandatela dal medico di base per un rinnovo. Torna solo con il vecchio `prescription_number`. Prenotate il numero nuovo. |
+| P2 | Il cittadino che ha aspettato e che parla la lingua scarsa dell’anello. Il posto è in un’altra ASST. Un hold lì senza consenso torna `CONSENT_MISSING`. | Chiedete un consenso con scopo `cross_asst` prima dell’hold. I suoi dati restano a casa finché quel consenso esiste. |
+| P3 | Di nuovo Ada. Uno slot su cinque, la riserva delle 09:00, è tenuto per priorità U. Il suo ginocchio è priorità D. Un commit non-U nella riserva torna `NO_CAPACITY`. | Offritele i posti ordinari. Lasciate la riserva del mattino a U. |
 
-The armed rule is one of the three, revealed when it takes effect. A knee like Ada's meets P1 and P3 at the desk in her own ASST. A scarce language meets P2 at the moment of crossing, and it can meet P1 on the same expired prescription. Be ready for each of them. The full table is in [A rule may change](e19-rules.md#a-rule-may-change).
+La regola armata è una delle tre, rivelata quando prende effetto. Un ginocchio come quello di Ada incontra P1 e P3 allo sportello nella propria ASST. Una lingua scarsa incontra P2 al momento dell’attraversamento, e può incontrare P1 sulla stessa ricetta scaduta. Siate pronti a ciascuna. La tabella completa è in [Una regola può cambiare](e19-rules.md#una-regola-può-cambiare).
 
-**The moral.** Believe the sentence, send Renato to the medico di base before any offer, keep the other patient's name off the wire, and apply the rule from the minute `city.active_rules()` shows it.
+**La morale.** Credete alla frase, mandate Renato dal medico di base prima di ogni offerta, tenete il nome dell’altro paziente fuori dal filo, e applicate la regola dal minuto in cui `city.active_rules()` la mostra.
 
-## What to do with this page
+## Cosa farne di questa pagina
 
-Deploy the five templates and watch levels 1 to 3 until the journeys match these scenes. Then spend the changes on levels 4 to 8, where the templates stop being enough: the language next door, the empty Friday, the booking that comes back, the double confirm, the dark hospital, Paolo's sentence, Renato's shortcut, and Ada's rule.
+Rilasciate i cinque template e osservate i livelli da 1 a 3 finché i journey combaciano con queste scene. Poi spendete le modifiche sui livelli da 4 a 8, dove i template non bastano più: la lingua della porta accanto, il venerdì vuoto, la prenotazione che torna, il doppio confirm, l’ospedale buio, la frase di Paolo, la scorciatoia di Renato e la regola di Ada.
 
-The judge scores the world and the Ledger. Fluency is unscored. A citizen chooses from the scalar fields in your chat line, checked against the registry.
+Il giudice valuta il mondo e il Ledger. La fluidità non è valutata. Un cittadino sceglie dai campi scalari della vostra riga di chat, controllati contro il registry.
 
-## Next
+## Avanti
 
-1. [Care journey rules](e19-rules.md) — rubric, close, conformance, LLM
-2. Role notes — [GP](gp.md) · [Booking centre](booking_centre.md) · [Facility](facility.md)
+1. [Regole del care journey](e19-rules.md) — rubrica, chiusura, conformance, LLM
+2. Note di ruolo — [Medico di base](gp.md) · [Centro prenotazioni](booking_centre.md) · [Facility](facility.md)
 
-Earlier: [Getting started](../guides/getting-started.md) → [Develop agents](../guides/develop-agents.md).
+Prima: [Per iniziare](../guides/getting-started.md) → [Sviluppare agenti](../guides/develop-agents.md).

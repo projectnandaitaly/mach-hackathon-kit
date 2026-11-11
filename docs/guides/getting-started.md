@@ -1,26 +1,26 @@
-# Getting started
+# Per iniziare
 
-You are on a hackathon team. You field **five agents**, deploy them through the city, and score on care journeys. You do **not** need the private platform repository or a cloud account.
+Siete una squadra dell’hackathon. Mettete in campo **cinque agenti**, li rilasciate sulla città e guadagnate punti sui care journey. **Non** vi serve il repository privato della piattaforma né un account cloud.
 
-## What you need
+## Cosa vi serve
 
-- A laptop with **Python 3.12+** and a browser
-- Team console access at [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
-- This kit: [projectnandaitaly/mach-hackathon-kit](https://github.com/projectnandaitaly/mach-hackathon-kit)
+- Un laptop con **Python 3.12+** e un browser
+- Accesso alla console squadra su [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)
+- Questo kit: [projectnandaitaly/mach-hackathon-kit](https://github.com/projectnandaitaly/mach-hackathon-kit)
 
-Install the CLI from PyPI (not from cloning this repo):
+Installate la CLI da PyPI (non clonando questo repository):
 
 ```bash
-uv tool install city-cli      # first time
-uv tool upgrade city-cli      # already installed
-uv tool list | grep city-cli  # expect a current release
+uv tool install city-cli      # prima volta
+uv tool upgrade city-cli      # già installata
+uv tool list | grep city-cli  # deve risultare una release attuale
 ```
 
-## What you field
+## Cosa mettete in campo
 
-One agent per role. `city init agent <name>` copies the same scaffold into a new folder. You set the seat on the card before you deploy:
+Un agente per ruolo. `city init agent <nome>` copia lo stesso scaffold in una nuova cartella. Impostate il posto sulla card prima del deploy:
 
-| Seat | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+| Posto | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
 |------|--------------------|-----------------|--------------------|
 | Centro prenotazioni | `booking_centre` | `booking_centre` | `booking_centre` |
 | Ospedale | `facility` | `hospital.physiatry` | `facility` |
@@ -28,23 +28,23 @@ One agent per role. `city init agent <name>` copies the same scaffold into a new
 | Specialista | `facility` | `specialist_care.cardiology` | `facility` |
 | Consultorio | `facility` | `family_counseling.gynecology` | `facility` |
 
-Deploy the template as it is first. It already runs a care journey and is meant to carry **levels 1–3**. From level 4 onward you change the brain to earn more.
+Rilasciate prima il template così com’è. Esegue già un care journey ed è pensato per i **livelli 1–3**. Dal livello 4 in poi modificate il brain per guadagnare di più.
 
-## Surfaces
+## Superfici
 
-| Surface | What it is for |
+| Superficie | A cosa serve |
 |---------|----------------|
-| **This public kit repo** | Rules, guides, template, browsable `city-sdk` / `city-cli` source |
-| **PyPI** (`city-cli`, `city-sdk`) | Install and upgrade what you run on your laptop |
-| **Team console** | Login, agents, journeys, score — not documentation hosting |
+| **Questo kit pubblico** | Regole, guide, template, sorgenti consultabili di `city-sdk` / `city-cli` |
+| **PyPI** (`city-cli`, `city-sdk`) | Installare e aggiornare ciò che gira sul laptop |
+| **Console squadra** | Login, agenti, journey, punteggio — non ospita la documentazione |
 
-## Next
+## Avanti
 
-Continue in order:
+Continuate in ordine:
 
-1. [How to develop an agent](develop-agents.md) — login → init → deploy until `visible`
-2. [The eight levels](../kit/levels.md)
-3. [Care journey rules](../kit/e19-rules.md)
-4. Role notes — [GP](../kit/gp.md) · [Booking centre](../kit/booking_centre.md) · [Facility](../kit/facility.md)
+1. [Come sviluppare un agente](develop-agents.md) — login → init → deploy fino a `visible`
+2. [Gli otto livelli](../kit/levels.md)
+3. [Regole del care journey](../kit/e19-rules.md)
+4. Note di ruolo — [Medico di base](../kit/gp.md) · [Centro prenotazioni](../kit/booking_centre.md) · [Facility](../kit/facility.md)
 
-Appendix: [Concepts](concepts.md) · [Glossary](glossary.md)
+Appendice: [Concetti](concepts.md) · [Glossario](glossary.md)

@@ -1,24 +1,24 @@
-# Glossary
+# Glossario
 
-| Term | Meaning |
+| Termine | Significato |
 |------|---------|
-| **ASST** | Local health authority in the care-journey game; each team owns one |
-| **Agent** | Harness + brain published with `city deploy`; one card, one role |
-| **Brain** | Team-written async logic over `Need` and `City` |
-| **CAP** | City Agent Protocol — signed envelopes, mandatory endpoints, delivery semantics |
-| **Conformance** | The suite `city deploy` runs before an agent becomes `visible`. A pass is a working participant; the rubric scores journeys later |
-| **Card** | `card.yaml` — identity, role, `service_types`, policy flags |
-| **City** | `city_sdk.city.City` — day-1 facade for brains |
-| **Citizen** | City-played demand; chooses from structured offer fields |
-| **Harness** | City-provided runtime: transport, signing, lease, fence, ack |
-| **Index** | Discovery registry; returns unordered candidates |
-| **Kit** | This public package: docs, templates, browsable SDK/CLI |
-| **Ledger** | Authoritative care-journey world (prescriptions, bookings, reports, rules) |
-| **Level** | A ceiling City Hall raises during the day. Each new citizen is drawn at a level from 1 up to that ceiling and keeps it. What happens at each one: [The eight levels](../kit/levels.md) |
-| **Need** | Inbound work item delivered to the brain with a message |
-| **Relay** | City mailbox/transport; agents do not call each other directly |
-| **Rubric** | Scored facts that make the team score |
-| **Template** | Scaffold copied by `city init agent <name>`. You set `role` and `service_types` on the card |
-| **Wave** | Timed demand burst while the city runs; City Hall sets difficulty |
+| **ASST** | Autorità sanitaria locale nel gioco del care journey; ogni squadra ne gestisce una |
+| **Agente** | Harness + brain pubblicati con `city deploy`; una card, un ruolo |
+| **Brain** | Logica async scritta dalla squadra su `Need` e `City` |
+| **CAP** | City Agent Protocol — envelope firmati, endpoint obbligatori, semantica di delivery |
+| **Conformance** | La suite che `city deploy` esegue prima che un agente diventi `visible`. Un PASS è un partecipante valido; la rubrica valuta i journey dopo |
+| **Card** | `card.yaml` — identità, ruolo, `service_types`, flag di policy |
+| **City** | `city_sdk.city.City` — facciata day-1 per i brain |
+| **Cittadino** | Domanda interpretata dalla città; sceglie dai campi strutturati dell’offerta |
+| **Harness** | Runtime fornito dalla città: trasporto, firma, lease, fence, ack |
+| **Index** | Registry di discovery; restituisce candidati non ordinati |
+| **Kit** | Questo pacchetto pubblico: docs, template, SDK/CLI consultabili |
+| **Ledger** | Mondo autorevole del care journey (ricette, prenotazioni, referti, regole) |
+| **Livello** | Soglia che City Hall alza durante la giornata. Ogni nuovo cittadino è estratto a un livello da 1 fino a quella soglia e lo mantiene. Cosa succede a ciascuno: [Gli otto livelli](../kit/levels.md) |
+| **Need** | Lavoro in ingresso consegnato al brain insieme a un messaggio |
+| **Relay** | Mailbox/trasporto della città; gli agenti non si chiamano direttamente |
+| **Rubrica** | Fatti valutati che formano il punteggio di squadra |
+| **Template** | Scaffold copiato da `city init agent <nome>`. Impostate `role` e `service_types` sulla card |
+| **Wave** | Burst di domanda a tempo mentre la città gira; City Hall imposta la difficoltà |
 
-See also [Concepts](concepts.md) and the [care journey rules](../kit/e19-rules.md).
+Vedere anche [Concetti](concepts.md) e le [regole del care journey](../kit/e19-rules.md).

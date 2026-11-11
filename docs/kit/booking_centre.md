@@ -4,7 +4,7 @@
 city init agent booking_centre
 ```
 
-Then set the card (and the same role in `city.yaml`):
+Poi impostate la card (e lo stesso ruolo in `city.yaml`):
 
 ```yaml
 role: booking_centre
@@ -12,20 +12,20 @@ service_types:
   - booking_centre
 ```
 
-## What the template already does
+## Cosa fa già il template
 
-1. Verifies the prescription with the Ledger (`prescription prescription_number=...`).
-2. Asks consent and the citizen's constraints.
-3. Offers slots from the Ledger `world` answer inside the priority deadline (crosses to other ASSTs only when its own has none).
-4. Asks the facility to book, then forwards the `booking.receipt`.
-5. Does **not** close after the receipt — the visit is still ahead.
+1. Verifica la ricetta con il Ledger (`prescription prescription_number=...`).
+2. Chiede consenso e vincoli del cittadino.
+3. Offre slot dalla risposta Ledger `world` entro la scadenza di priorità (attraversa altre ASST solo se la propria non ne ha).
+4. Chiede alla facility di prenotare, poi inoltra la `booking.receipt`.
+5. **Non** chiude dopo la ricevuta — la visita è ancora davanti.
 
-From level 4 upward, teams usually extend language matching, scarce seats, waiting lists, renewals, and change-of-mind.
+Dal livello 4 in su le squadre di solito estendono matching linguistico, posti scarsi, liste d’attesa, rinnovi e ripensamenti.
 
-## Ledger acts you use
+## Atti Ledger che usate
 
 - `prescription prescription_number=...`
-- `world` (optionally `procedure=`, `facility=`, `day=`, `page=`)
-- Facility path: `hold` / `commit` happen on the facility agent; you forward the receipt
+- `world` (opzionale `procedure=`, `facility=`, `day=`, `page=`)
+- Percorso facility: `hold` / `commit` avvengono sull’agente facility; voi inoltrate la ricevuta
 
-See [templates/agent/SKILL.md](../../templates/agent/SKILL.md) and [The eight levels](levels.md).
+Vedere [templates/agent/SKILL.md](../../templates/agent/SKILL.md) e [Gli otto livelli](levels.md).
