@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
-from typing import Literal
+from typing import IO, Literal
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 from rich.theme import Theme
 
 Kind = Literal["ok", "bad", "warn", "info", "pass", "fail", "run"]
@@ -26,8 +28,19 @@ _THEME = Theme(
         "label": "bold",
         "hero": "bold cyan",
         "rule": "dim cyan",
+        # Chat streams. Light enough to read on a dark terminal, and far enough apart
+        # that input, logs, and the answer stay distinct. The gutter word names the stream.
+        "you": "bold #8ecbff",
+        "log": "#e6c36a",
+        "out": "#7dcea0",
     }
 )
+
+# Same hue as theme style "you". Active while the terminal echoes a line.
+_YOU_ON = "\033[38;2;142;203;255m"
+_YOU_OFF = "\033[0m"
+Stream = Literal["you", "log", "out"]
+_STREAM_LABEL: dict[Stream, str] = {"you": "in", "log": "log", "out": "out"}
 
 _MARK: dict[Kind, str] = {
     "ok": "✓",
@@ -40,6 +53,59 @@ _MARK: dict[Kind, str] = {
 }
 
 console = Console(theme=_THEME, highlight=False, soft_wrap=True)
+
+
+def _fold(text: str, width: int) -> list[str]:
+    """Wrap on spaces. A token longer than ``width`` breaks so a path cannot run off."""
+    rows: list[str] = []
+    for raw in text.splitlines() or [""]:
+        current = ""
+        for word in raw.split(" "):
+            while len(word) > width:
+                if current:
+                    rows.append(current)
+                    current = ""
+                rows.append(word[:width])
+                word = word[width:]
+            if not word:
+                continue
+            candidate = word if not current else f"{current} {word}"
+            if current and len(candidate) > width:
+                rows.append(current)
+                current = word
+            else:
+                current = candidate
+        rows.append(current)
+    return rows
+
+
+def transcript(kind: Stream, message: str, *, style: str | None = None) -> None:
+    """One chat row. ``you`` is what was typed, ``log`` is the agent log, ``out`` is the answer.
+
+    ``style`` overrides the hue (an error log stays in the log gutter, painted as a failure).
+    Wrapped lines keep the gutter width, and nothing is padded out to the terminal edge.
+    """
+    if not message:
+        return
+    paint = style or kind
+    label = _STREAM_LABEL[kind]
+    # Leave one column free so a full line does not wrap and leave a blank row.
+    width = max(24, console.width - 5)
+    lines = _fold(message, width)
+    gutter = " " * 4
+    for index, line in enumerate(lines):
+        prefix = f"{label:<3} " if index == 0 else gutter
+        console.print(Text(prefix + line, style=paint), soft_wrap=False)
+    _bump_line()
+
+
+def echo_input_color(stream: IO[str], *, on: bool) -> None:
+    """Color the terminal's echo of the line being typed. No effect when color is off."""
+    if os.environ.get("NO_COLOR") or not console.is_terminal:
+        return
+    stream.write(_YOU_ON if on else _YOU_OFF)
+    stream.flush()
+
 
 # Counts human lines so a step can rewrite its own "…" only when nothing else
 # printed in between (nested pipeline steps stay intact).

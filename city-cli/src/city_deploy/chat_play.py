@@ -518,7 +518,24 @@ def _explain_action(action: Mapping[str, object]) -> str:
         return f"Check-in on the local ledger ({action.get('detail', '')})."
     if kind == "report":
         return "Report filed for this booking."
+    if kind == "say":
+        return _said(action)
+    if kind == "ledger":
+        text = action.get("text", "")
+        spoken = text.strip() if isinstance(text, str) else ""
+        return f"Ledger: {spoken or '(no text)'}"
     return f"{kind}: a market action."
+
+
+def _said(action: Mapping[str, object]) -> str:
+    """The words the brain sent, and who they were for."""
+    peer = action.get("to", "")
+    who = peer.strip() if isinstance(peer, str) and peer.strip() else "the room"
+    text = action.get("text", "")
+    spoken = text.strip() if isinstance(text, str) else ""
+    status = action.get("status", "")
+    mark = f" ({status})" if isinstance(status, str) and status else ""
+    return f"To {who}{mark}: {spoken or '(no text)'}"
 
 
 def _explain_post(action: Mapping[str, object], body: Mapping[str, object]) -> str:

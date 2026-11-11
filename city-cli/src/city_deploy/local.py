@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import logging
 import os
 import re
 import sys
-from collections.abc import Callable
-from datetime import timedelta
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, TextIO, cast
 
 from cap.core.errors import CapError
 from cap.core.timeutil import format_time
@@ -25,6 +29,8 @@ from city_sdk.devmode import CITIZEN_SENDER, invoke_local
 from city_sdk.gateway_env import inject_team_gateway
 from city_sdk.harness import Harness
 from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
+from city_sdk.utils.logging import line_from_record
+from rich.markup import escape
 
 from city_deploy.agent_ids import new_rid
 from city_deploy.card_schema import write_card_id
@@ -38,7 +44,7 @@ from city_deploy.chat_play import (
     line_hint,
     moves_for,
 )
-from city_deploy.style import report, say
+from city_deploy.style import console, echo_input_color, report, say, transcript
 
 _DEFAULT_PROCEDURE = "visita-cardiologica"
 _LOCAL_RX_PREFIX = "rx-local-"
@@ -379,27 +385,249 @@ def _chat_pairs(text: str) -> dict[str, str]:
     return fields
 
 
+class _AgentLogs(logging.Handler):
+    """Brain and SDK lines emitted while a turn runs. Transport libraries stay out."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.name.startswith(
+            ("httpx", "httpcore", "urllib3", "asyncio", "uvicorn", "hpack", "concurrent")
+        ):
+            return
+        self.records.append(record)
+
+
+def _arm_agent_logs() -> tuple[_AgentLogs, int, list[logging.Handler]]:
+    """Collect every level. Root keeps only this handler, so a line is not also dumped raw."""
+    root = logging.getLogger()
+    handler = _AgentLogs()
+    previous = root.level
+    previous_handlers = list(root.handlers)
+    root.handlers = [handler]
+    root.setLevel(logging.DEBUG)
+    return handler, previous, previous_handlers
+
+
+def _disarm_agent_logs(
+    handler: _AgentLogs,
+    previous: int,
+    previous_handlers: list[logging.Handler],
+) -> None:
+    root = logging.getLogger()
+    root.removeHandler(handler)
+    root.setLevel(previous)
+    root.handlers = previous_handlers
+
+
+class _LineCapture(io.TextIOBase):
+    """Lines written by ``print`` while the brain runs."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines: list[tuple[float, str]] = []
+        self._pending = ""
+
+    def write(self, s: str) -> int:
+        self._pending += s
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            if line.strip():
+                self.lines.append((time.time(), line))
+        return len(s)
+
+    def flush(self) -> None:
+        if self._pending.strip():
+            self.lines.append((time.time(), self._pending))
+        self._pending = ""
+
+    def isatty(self) -> bool:
+        return False
+
+
+class _StdioGrab:
+    def __init__(self) -> None:
+        self.stdout = _LineCapture()
+        self.stderr = _LineCapture()
+
+
+@contextmanager
+def _capture_stdio() -> Iterator[_StdioGrab]:
+    """Take ``print()`` (and stderr) for one turn. The chat chrome keeps the real streams."""
+    grab = _StdioGrab()
+    previous_out, previous_err = sys.stdout, sys.stderr
+    sys.stdout = cast(TextIO, grab.stdout)
+    sys.stderr = cast(TextIO, grab.stderr)
+    try:
+        yield grab
+    finally:
+        grab.stdout.flush()
+        grab.stderr.flush()
+        sys.stdout = previous_out
+        sys.stderr = previous_err
+
+
+def _grabbed_prints(grab: _StdioGrab) -> list[tuple[float, str, str]]:
+    rows = [(when, "stdout", text) for when, text in grab.stdout.lines]
+    rows.extend((when, "stderr", text) for when, text in grab.stderr.lines)
+    return rows
+
+
+def _isatty(stream: TextIO) -> bool:
+    check = getattr(stream, "isatty", None)
+    try:
+        return bool(check and check())
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _read_chat_line(stdin: TextIO, stdout: TextIO, label: str) -> str:
+    """Read one line. On a terminal the prompt and the echo are the input color."""
+    interactive = _isatty(stdin) and _isatty(stdout)
+    if interactive:
+        console.print(f"[you]{escape(label)}>[/you] ", end="")
+        console.file.flush()
+        echo_input_color(stdout, on=True)
+    try:
+        line = stdin.readline()
+    finally:
+        if interactive:
+            echo_input_color(stdout, on=False)
+    if line.strip() and not interactive:
+        transcript("you", line.strip())
+    return line
+
+
+def _print_legend() -> None:
+    console.print(
+        "[you]in[/you]   what you type     "
+        "[log]log[/log]  agent logs     "
+        "[out]out[/out]  what the agent answers"
+    )
+
+
+def _print_agent_logs(
+    lines: Sequence[Mapping[str, object]],
+    records: Sequence[logging.LogRecord],
+    prints: Sequence[tuple[float, str, str]] = (),
+) -> None:
+    """Harness lines, ``logging`` records, and ``print()`` lines, in time order."""
+    blocks: list[tuple[str, str, str]] = []
+    messages: set[str] = set()
+    for line in lines:
+        severity, text = _format_chat_log(line)
+        blocks.append((str(line.get("time", "")), severity, text))
+        raw = line.get("message")
+        if isinstance(raw, str) and raw:
+            messages.add(raw)
+    for record in records:
+        built = line_from_record(record)
+        # The harness binds category=delivery for the whole turn. The logger name
+        # is what tells logging.debug apart from a harness line.
+        built["category"] = record.name
+        severity, text = _format_chat_log(built)
+        blocks.append((str(built.get("time", "")), severity, text))
+        messages.add(record.getMessage())
+    for when, stream, text in prints:
+        if _logging_echo(text, messages):
+            continue
+        stamp = datetime.fromtimestamp(when, UTC).isoformat()
+        clock = stamp[11:19] if len(stamp) >= 19 else stamp
+        label = "PRINT" if stream == "stdout" else "STDERR"
+        blocks.append((stamp, "INFO", f"{clock} {label} {text}"))
+    blocks.sort(key=lambda item: item[0])
+    for _stamp, severity, text in blocks:
+        if severity in {"ERROR", "CRITICAL"}:
+            style: str | None = "bad"
+        elif severity == "WARNING":
+            style = "warn"
+        else:
+            style = None
+        transcript("log", text, style=style)
+
+
+def _logging_echo(line: str, messages: set[str]) -> bool:
+    """True when ``line`` is a logging handler's copy of a record we already show."""
+    head = line.lstrip()
+    if not head.startswith(("DEBUG:", "INFO:", "WARNING:", "ERROR:", "CRITICAL:")):
+        return False
+    return any(message and message in line for message in messages)
+
+
+def _format_chat_log(line: Mapping[str, object]) -> tuple[str, str]:
+    """One short log for the chat. The header already names the agent, team, and market."""
+    stamp = str(line.get("time", ""))
+    clock = stamp[11:19] if len(stamp) >= 19 else stamp
+    severity = str(line.get("severity", "INFO"))
+    level = {"WARNING": "WARN", "CRITICAL": "CRIT"}.get(severity, severity)
+    message = str(line.get("message", "")).replace("\n", " ").strip()
+    category = str(line.get("category", "") or "")
+    if message == category:
+        category = ""
+    tag = f"[{category}]" if category else ""
+    head = " ".join(part for part in (clock, level, tag, message) if part)
+    details: list[str] = []
+    for key, label in (
+        ("type", "type"),
+        ("msg_id", "msg"),
+        ("need_id", "need"),
+        ("conversation_id", "conversation"),
+    ):
+        value = line.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        shown = value[:8] if key == "msg_id" and len(value) > 8 else value
+        details.append(f"{label}={shown}")
+    body = head if not details else f"{head}\n{'  '.join(details)}"
+    exception = line.get("exception")
+    summary = _exception_summary(exception) if isinstance(exception, str) else ""
+    if summary:
+        body = f"{body}\n{summary}"
+    return severity, body
+
+
+def _exception_summary(text: str) -> str:
+    """The error line and the innermost frame, not the wrapped traceback."""
+    rows = [row.strip() for row in text.splitlines() if row.strip()]
+    if not rows:
+        return ""
+    error = rows[-1]
+    frame = ""
+    for row in reversed(rows):
+        if not row.startswith("File "):
+            continue
+        path, _, rest = row[5:].partition(",")
+        path = path.strip().strip('"')
+        name = path.rsplit("/", 1)[-1]
+        line_no = ""
+        func = ""
+        if "line " in rest:
+            line_no = rest.split("line ", 1)[1].split(",", 1)[0].strip()
+        if " in " in rest:
+            func = rest.rsplit(" in ", 1)[-1].strip()
+        frame = " ".join(part for part in (f"{name}:{line_no}" if line_no else name, func) if part)
+        break
+    return f"{error}\n{frame}" if frame else error
+
+
 def _print_chat_actions(
     result: dict[str, Any],
     posts: list[dict[str, object]],
     *,
     target: str,
 ) -> None:
-    status = result.get("status", "unknown")
-    say(f"Agent  [city]{status}[/city]", kind="ok" if status == "processed" else "warn")
+    console.print()
+    status = str(result.get("status", "unknown"))
     actions = result.get("actions")
     rows = actions if isinstance(actions, list) else []
+    chunks: list[str] = [status]
     if not rows:
-        say("  (no actions)", kind="info")
-    for action in rows:
-        if not isinstance(action, dict):
-            continue
-        kind = str(action.get("kind", "?"))
-        bits = [f"{key}={value}" for key, value in action.items() if key != "kind"]
-        detail = " ".join(bits)
-        say(f"  → {kind}" + (f"  {detail}" if detail else ""), kind="info")
-    for sentence in explain_turn(rows, posts, target=target):
-        say(f"  {sentence}", kind="info")
+        chunks.append("(no actions)")
+    chunks.extend(explain_turn(rows, posts, target=target))
+    transcript("out", "\n".join(chunks))
+    console.print()
 
 
 def chat_local(
@@ -437,82 +665,106 @@ async def _chat_local_async(
         ],
         subtitle="Pick who you are, then a move, slash command, or sentence",
     )
-    _print_characters()
-    actor: str | None = None
-    moves = moves_for("citizen", target, service=service)
-    while True:
-        try:
-            stdout.write("as> " if actor is None else f"{actor}> ")
-            stdout.flush()
-            line = stdin.readline()
-        except EOFError:
-            break
-        if line == "":
-            break
-        turn = interpret(line, actor=actor, service=service, moves=moves)
-        if turn.kind == "noop":
-            continue
-        if turn.kind == "quit":
-            say("Goodbye", kind="info")
-            return
-        if turn.kind == "error":
-            say(turn.message, kind="warn")
-            continue
-        if turn.kind == "actor":
-            if turn.actor is None:
-                _print_characters()
-                actor = None
-                continue
-            actor = turn.actor
-            moves = moves_for(actor, target, service=service)
-            _print_moves(actor, target, moves)
-            continue
-        if turn.kind == "moves":
-            if actor is None:
-                _print_characters()
-            else:
-                _print_moves(actor, target, moves)
-            continue
-        if turn.kind == "rx":
+    _print_legend()
+    _print_agent_logs(harness.log.lines, [])
+    capture, previous_level, previous_handlers = _arm_agent_logs()
+    try:
+        _print_characters()
+        actor: str | None = None
+        moves = moves_for("citizen", target, service=service)
+        while True:
             try:
-                number = await seed_local_rx(harness)
-            except CapError as exc:
-                say(f"Could not seed Rx  [mute]{exc.code}  {exc.message}[/mute]", kind="warn")
+                label = "as" if actor is None else actor
+                line = _read_chat_line(stdin, stdout, label)
+            except EOFError:
+                break
+            if line == "":
+                break
+            turn = interpret(line, actor=actor, service=service, moves=moves)
+            if turn.kind == "noop":
                 continue
-            say(f"Rx  [city]{number}[/city]  use /need rx={number}", kind="ok")
-            continue
-        payload = turn.payload
-        if payload is None:
-            continue
-        try:
+            if turn.kind == "quit":
+                say("Goodbye", kind="info")
+                return
+            if turn.kind == "error":
+                say(turn.message, kind="warn")
+                continue
+            if turn.kind == "actor":
+                if turn.actor is None:
+                    _print_characters()
+                    actor = None
+                    continue
+                actor = turn.actor
+                moves = moves_for(actor, target, service=service)
+                _print_moves(actor, target, moves)
+                continue
+            if turn.kind == "moves":
+                if actor is None:
+                    _print_characters()
+                else:
+                    _print_moves(actor, target, moves)
+                continue
+            if turn.kind == "rx":
+                try:
+                    number = await seed_local_rx(harness)
+                except CapError as exc:
+                    say(f"Could not seed Rx  [mute]{exc.code}  {exc.message}[/mute]", kind="warn")
+                    continue
+                say(f"Rx  [city]{number}[/city]  use /need rx={number}", kind="ok")
+                continue
+            payload = turn.payload
+            if payload is None:
+                continue
             if reload_brain(harness, project, stamp=stamp):
                 stamp = brain_stamp(project)
                 say("Brain reloaded — agent sources changed", kind="info")
             posted = len(harness.relay.posted) if isinstance(harness.relay, MemoryRelay) else 0
-            result = await invoke_local(harness, payload)
-        except CapError as exc:
-            say(f"Invoke failed  [mute]{exc.code}  {exc.message}[/mute]", kind="warn")
-            continue
-        fresh: list[dict[str, object]] = []
-        if isinstance(harness.relay, MemoryRelay):
-            fresh = [row for row in harness.relay.posted[posted:] if isinstance(row, dict)]
-        _print_chat_actions(result, fresh, target=target)
+            logged = len(harness.log.lines)
+            capture.records.clear()
+            result: dict[str, Any] | None = None
+            error: CapError | None = None
+            with _capture_stdio() as grab:
+                try:
+                    result = await invoke_local(harness, payload)
+                except CapError as exc:
+                    error = exc
+            # Restore the real stdout before drawing the turn. Otherwise the
+            # chat lines fall into the print() capture.
+            _print_agent_logs(harness.log.lines[logged:], capture.records, _grabbed_prints(grab))
+            capture.records.clear()
+            if error is not None or result is None:
+                if error is not None:
+                    say(f"Invoke failed  [mute]{error.code}  {error.message}[/mute]", kind="warn")
+                continue
+            fresh: list[dict[str, object]] = []
+            if isinstance(harness.relay, MemoryRelay):
+                fresh = [row for row in harness.relay.posted[posted:] if isinstance(row, dict)]
+            _print_chat_actions(result, fresh, target=target)
+    finally:
+        _disarm_agent_logs(capture, previous_level, previous_handlers)
 
 
 def _print_characters() -> None:
-    say("Who are you? Type a number or a name. /as <name> switches later.", kind="info")
+    console.print()
+    console.print(
+        "[label]Who are you?[/label]  Type a number or a name. /as <name> switches later."
+    )
     for index, (name, meaning) in enumerate(CHARACTERS, start=1):
-        say(f"  {index}  {name} — {meaning}", kind="info")
+        console.print(f"  [label]{index}[/label]  {name} — {meaning}")
     _print_session_commands()
 
 
 def _print_session_commands() -> None:
+    console.print()
     for command, meaning in SESSION_COMMANDS:
-        say(f"  {command} — {meaning}", kind="info")
+        console.print(f"  [label]{command}[/label]  {meaning}")
 
 
 def _print_moves(actor: str, target: str, moves: list[PlayMove]) -> None:
-    say(f"Playing [city]{actor}[/city] → [city]{target}[/city].", kind="ok")
+    console.print()
+    console.print(
+        f"[label]Playing[/label] [you]{escape(actor)}[/you] → [you]{escape(target)}[/you]"
+    )
     if not moves:
         say(
             "A sentence still reaches the brain. /as <name> switches.",
@@ -520,11 +772,15 @@ def _print_moves(actor: str, target: str, moves: list[PlayMove]) -> None:
         )
         _print_session_commands()
         return
-    say("Type a number, that slash command, or a sentence.", kind="info")
+    console.print("Type a number, that slash command, or a sentence.")
+    console.print()
     for index, move in enumerate(moves, start=1):
         if not isinstance(move, PlayMove):
             continue
-        say(f"  {index}  {move.command} — {move.title}", kind="info")
-        say(f"     {move.meaning}", kind="info")
-    say(line_hint(actor), kind="info")
+        console.print(
+            f"  [label]{index}[/label]  [label]{escape(move.command)}[/label]  {escape(move.title)}"
+        )
+        console.print(f"     {escape(move.meaning)}")
+        console.print()
+    console.print(line_hint(actor))
     _print_session_commands()
