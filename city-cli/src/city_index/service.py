@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
-from collections.abc import Mapping
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from cap.core.errors import CapError
 from cap.core.timeutil import format_time
@@ -27,6 +31,8 @@ from city_index.visibility import TEAM_RESTORE
 from city_index.watch import WatchHub
 
 log = logging.getLogger("city.index")
+
+LEDGER_KID = "city:ledger#k1"
 
 
 @dataclass
@@ -56,9 +62,12 @@ class IndexService:
         watch: WatchHub | None = None,
         reputation: ReputationPort | None = None,
         resolver: Resolver | None = None,
+        ledger_card: Callable[[], Mapping[str, object] | None] | None = None,
     ) -> None:
         self.catalog = catalog or Catalog()
         self.resolver = resolver
+        self.ledger_card = ledger_card
+        self._ledger_jwk: dict[str, str] | None = None
         self.reputation: ReputationPort = reputation or NoReputation()
         self.cache: QueryCachePort = cache if cache is not None else QueryCache()
         self.clock = clock or SystemClock()
@@ -278,6 +287,10 @@ class IndexService:
         return dict(self.catalog.get(agent_id).card)
 
     def get_key(self, kid: str) -> dict[str, str]:
+        if kid == LEDGER_KID:
+            found = self._ledger_key()
+            if found is not None:
+                return found
         if is_citizen(kid.partition("#")[0]):
             try:
                 return self.citizens.key(kid, "invoke").to_jwk()
@@ -285,6 +298,42 @@ class IndexService:
                 raise CapError("KEY_UNKNOWN", kid) from exc
         self._refresh()
         return self.catalog.key_for_kid(kid)
+
+    def _ledger_key(self) -> dict[str, str] | None:
+        """The Ledger public key from its card. Agents verify ``city:ledger#k1`` through here."""
+
+        if self._ledger_jwk is not None:
+            return self._ledger_jwk
+        card = self._read_ledger_card()
+        key = card.get("public_key") if isinstance(card, Mapping) else None
+        if (
+            not isinstance(card, Mapping)
+            or card.get("kid") != LEDGER_KID
+            or not isinstance(key, Mapping)
+        ):
+            return None
+        kty, crv, x = key.get("kty"), key.get("crv"), key.get("x")
+        if kty != "OKP" or crv != "Ed25519" or not isinstance(x, str) or not x or "d" in key:
+            return None
+        self._ledger_jwk = {"kty": kty, "crv": crv, "x": x}
+        return self._ledger_jwk
+
+    def _read_ledger_card(self) -> Mapping[str, object] | None:
+        if self.ledger_card is not None:
+            return self.ledger_card()
+        url = os.environ.get("CITY_LEDGER_URL", "").strip()
+        if not url:
+            return None
+        request = Request(url.rstrip("/") + "/card", method="GET")
+        try:
+            with urlopen(request, timeout=5.0) as response:
+                if response.status != 200:
+                    return None
+                body = json.load(response)
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError):
+            log.warning("index.ledger_card_unavailable")
+            return None
+        return body if isinstance(body, dict) else None
 
     def query(self, *, caller: str, role: str, include: str | None = None) -> dict[str, Any]:
         """Each team's visible agent of ``role``, with its reputation, in the shuffle."""
