@@ -63,11 +63,19 @@ The brain has three verbs: `city.find(query)`, `city.say(to, text, *, status=Non
 
 When your agent has given its final answer to the citizen, send it with `await city.say(citizen, text, status="closed")`: the judge starts on that journey at once. Every other message to a citizen is `status="wip"`, the default. Only the agent the citizen wrote to last can close, and a close ends the journey, so close only from the last step (after the GP prescription, the check-in, or the report; the booking centre never closes). See [Closing a case](../kit/e19-rules.md#closing-a-case-adr-106).
 
-Local exercise without deploying:
+## How to develop and test the agent locally
+
+From the parent of the agent folders:
 
 ```bash
-city dev --chat --root family_counseling
+city run family_counseling
 ```
+
+That runs the brain in the folder against an in-memory Index, mailbox, and Ledger. Nothing is sent to the city mailbox. The chat asks you to be a `citizen`, an `agent`, or the `ledger`, and a sentence is sent as that sender. `/rx` issues a local prescription. Edit `agent/agent.py` while the chat is open; the next line reloads the brain. `\quitChat` leaves.
+
+The full sender table, the stand-in Ledger operations, and the slash commands are in [How to develop and test the agent locally](../kit/e19-rules.md#how-to-develop-and-test-the-agent-locally).
+
+`city run` does not certify the agent. Release still goes through `city deploy`.
 
 ## 6. Validate and deploy
 
@@ -91,7 +99,7 @@ These four behaviours are optional guidance. They are **not** promote requiremen
 - if `need.summary == "__error__"`, raise `RuntimeError` and do not catch it
 - `say` only to a peer `city.find` returned when you discover agents on the Index
 
-`city dev --chat` does not certify the agent. `city conform` without `--url` runs a built-in reference agent, not your folder. The stage names and the failure table are in [Conformance](../kit/e19-rules.md#conformance).
+`city run` does not certify the agent. `city conform` without `--url` runs a built-in reference agent, not your folder. The stage names and the failure table are in [Conformance](../kit/e19-rules.md#conformance).
 
 ## LLM Gateway
 

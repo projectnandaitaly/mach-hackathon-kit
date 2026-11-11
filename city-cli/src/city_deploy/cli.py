@@ -39,7 +39,7 @@ from city_deploy.card_schema import (
 from city_deploy.conform import select_profile
 from city_deploy.controller import ensure_controller_key, load_controller
 from city_deploy.image import collect_context, encode_files, parse_dockerfile
-from city_deploy.local import chat_local, flat_field, init_project, run_local_need, serve_local
+from city_deploy.local import chat_local, flat_field, init_project
 from city_deploy.loopback import LoopbackReceiver, new_pkce
 from city_deploy.service import UNASSIGNED, DeployService
 from city_deploy.store import TeamStore, resolve_active_team, write_active_team
@@ -513,56 +513,34 @@ def conform(
         raise typer.Exit(code=1)
 
 
-@app.command("dev")
-def dev(
+@app.command("run")
+def run(
     ctx: typer.Context,
-    root: Path = typer.Option(Path("."), "--root"),
-    serve: bool = typer.Option(
-        False,
-        "--serve",
-        help="Listen on loopback and accept POST /dev/invoke. The city mailbox is not contacted.",
+    agent: str = typer.Argument(
+        ...,
+        help="Agent folder under --root (city run family_counseling from the parent).",
     ),
-    chat: bool = typer.Option(
-        False,
-        "--chat",
-        help="In-process terminal chat with the local agent. The city mailbox is not contacted.",
-    ),
-    host: str = typer.Option("127.0.0.1", "--host", help="Loopback address to bind."),
-    port: int | None = typer.Option(
-        None,
-        "--port",
-        help="Port to bind. Default is the role port (booking_centre 8091, facility 8092).",
+    root: Path = typer.Option(
+        Path("."),
+        "--root",
+        help="Parent of the agent folder.",
     ),
 ) -> None:
-    """Run one local need, serve for curl, or chat in-process with the agent."""
+    """Chat with a local agent. The city mailbox is not contacted."""
     as_json = _state(ctx).get("json") is True
-    if chat and serve:
-        _fail(ctx, CapError("SCHEMA_INVALID", "use --chat or --serve, not both"))
+    try:
+        project = _agent_project(root, agent)
+    except CapError as exc:
+        _fail(ctx, exc)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        _fail(ctx, CapError("SCHEMA_INVALID", "city run is interactive; omit --json"))
         raise typer.Exit(code=1)
-    if chat and as_json:
-        _fail(ctx, CapError("SCHEMA_INVALID", "--chat is interactive; omit --json"))
-        raise typer.Exit(code=1)
-    if chat:
-        try:
-            chat_local(root)
-        except CapError as exc:
-            _fail(ctx, exc)
-            raise typer.Exit(code=1) from exc
-        return
-    if serve:
-        try:
-            serve_local(root, host=host, port=port, as_json=as_json)
-        except CapError as exc:
-            _fail(ctx, exc)
-            raise typer.Exit(code=1) from exc
-        return
-    payload = asyncio.run(run_local_need(root))
-    _emit(
-        ctx,
-        payload,
-        f"Asked [city]{payload['asked']}[/city]",
-        kind="info",
-    )
+    try:
+        chat_local(project)
+    except CapError as exc:
+        _fail(ctx, exc)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("deploy")

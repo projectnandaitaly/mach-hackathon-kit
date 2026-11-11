@@ -1,9 +1,8 @@
-"""Local project helpers: template copy, one in-process need, and a loopback harness."""
+"""Local project helpers: template copy and in-process chat."""
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import os
 import re
@@ -13,27 +12,19 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, TextIO
 
-import uvicorn
 from cap.core.errors import CapError
-from cap.core.http_ports import listen
 from cap.core.timeutil import format_time
-from city_sdk.app import create_app
 from city_sdk.boot import (
-    BRAIN_SPEC,
     brain_stamp,
     llm_connector,
-    load_brain,
-    plane_for,
     prepare,
     reload_brain,
 )
-from city_sdk.city import City, Message, Need, Peer
+from city_sdk.city import Peer
 from city_sdk.devmode import CITIZEN_SENDER, invoke_local
-from city_sdk.gateway_env import inject_team_gateway, load_team_gateway
+from city_sdk.gateway_env import inject_team_gateway
 from city_sdk.harness import Harness
-from city_sdk.logs import HarnessLog
 from city_sdk.ports import LocalLedger, MemoryIndex, MemoryRelay
-from city_sdk.utils.logging import configure, uvicorn_log_config
 
 from city_deploy.agent_ids import new_rid
 from city_deploy.card_schema import write_card_id
@@ -44,6 +35,7 @@ from city_deploy.chat_play import (
     agent_part,
     explain_turn,
     interpret,
+    line_hint,
     moves_for,
 )
 from city_deploy.style import report, say
@@ -181,48 +173,13 @@ def flat_field(text: str, key: str) -> str | None:
     return None
 
 
-async def run_local_need(root: Path) -> dict[str, Any]:
-    """One citizen message through the project brain, against local stand-ins."""
-
-    city_yaml = (root / "city.yaml").read_text(encoding="utf-8")
-    if flat_field(city_yaml, "brain") is not None:
-        raise CapError("SCHEMA_INVALID", "brain")
-    team = flat_field(city_yaml, "team")
-    if team:
-        os.environ.setdefault("CITY_TEAM", team)
-    inject_team_gateway(team_id=team, root=root)
-    function = load_brain(root, BRAIN_SPEC)
-    llm = llm_connector({}, team_id=team, root=root)
-    agent_id = "agent:local/dev"
-    relay = MemoryRelay(agent_id=agent_id, ledger=LocalLedger())
-    inbound = Message(
-        type="chat",
-        sender=CITIZEN_SENDER,
-        recipient=agent_id,
-        msg_id="local-1",
-        need_id="local",
-        body={"text": "I need a visit"},
-    )
-    relay.record(inbound)
-    market = City(
-        index=MemoryIndex(peers=[_LOCAL_PEER]),
-        messages=relay,
-        history=relay,
-        agent_id=agent_id,
-        inbound=inbound,
-        llm=llm,
-    )
-    await function(Need(summary=inbound.text, message=inbound), market)
-    said = [str(row["to"]) for row in relay.posted]
-    asked = next((to for to in said if to != CITIZEN_SENDER), None)
-    return {"asked": asked, "said": said}
-
-
 def _prepare_local_harness(root: Path) -> tuple[Harness, str | None]:
     """Load the project harness for local-only modes (serve / chat)."""
     if os.environ.get("CITY_ENV") == "cloud":
         raise CapError("POLICY_VIOLATION", "CITY_ENV")
     project = root.resolve()
+    os.environ["CITY_CARD"] = str(project / "card.yaml")
+    os.environ.pop("CITY_ROLE", None)
     ready = prepare(
         {
             "CITY_CARD": str(project / "card.yaml"),
@@ -558,8 +515,7 @@ def _print_moves(actor: str, target: str, moves: list[PlayMove]) -> None:
     say(f"Playing [city]{actor}[/city] → [city]{target}[/city].", kind="ok")
     if not moves:
         say(
-            "This character sends no care-journey message to that agent. "
-            "A sentence or /json {...} still reaches the brain. /as <name> switches.",
+            "A sentence still reaches the brain. /as <name> switches.",
             kind="warn",
         )
         _print_session_commands()
@@ -570,95 +526,5 @@ def _print_moves(actor: str, target: str, moves: list[PlayMove]) -> None:
             continue
         say(f"  {index}  {move.command} — {move.title}", kind="info")
         say(f"     {move.meaning}", kind="info")
-    say(
-        "A sentence is a need.request. It carries your words only, "
-        "not a symptom code or a prescription.",
-        kind="info",
-    )
+    say(line_hint(actor), kind="info")
     _print_session_commands()
-
-
-def serve_local(
-    root: Path,
-    *,
-    host: str = "127.0.0.1",
-    port: int | None = None,
-    as_json: bool = False,
-) -> dict[str, Any]:
-    """Serve the project harness on loopback. ``/dev/invoke`` stays in memory."""
-    _require_loopback(host)
-    if port is not None and (port < 1 or port > 65535):
-        raise CapError("SCHEMA_INVALID", "port")
-    harness, team = _prepare_local_harness(root)
-    key, _url = load_team_gateway(team_id=team, root=root.resolve())
-    llm_status = "loaded" if key else "missing"
-    if not isinstance(harness.index, MemoryIndex):
-        raise CapError("POLICY_VIOLATION", "index")
-    harness.index.peers.append(_LOCAL_PEER)
-    raw_role = harness.card.get("role")
-    role_name = raw_role if isinstance(raw_role, str) else ""
-    plane = plane_for(role_name)
-    chosen = listen(plane, environ={"HOST": host})[1] if port is None else port
-    role = role_name if role_name else plane.value
-    facts = {
-        "agent_id": harness.agent_id,
-        "role": role,
-        "host": host,
-        "port": chosen,
-        "url": _http_base(host, chosen),
-        "invoke": "POST /dev/invoke",
-        "inbox": "local",
-        "peer": _LOCAL_PEER.agent_id,
-    }
-    if as_json:
-        print(json.dumps(facts), flush=True)
-    else:
-        report(
-            "Local agent",
-            [
-                ("Agent", str(facts["agent_id"])),
-                ("Listen", str(facts["url"])),
-                ("Invoke", "POST /dev/invoke"),
-                ("Inbox", "in-memory (not the city mailbox)"),
-                ("Peer", _LOCAL_PEER.agent_id),
-            ],
-            subtitle="curl this process — nothing leaves the laptop",
-        )
-        say(f"Listening on [city]{facts['url']}[/city]", kind="info")
-        if llm_status == "loaded":
-            gateway = os.environ.get("CITY_LLM_GATEWAY_URL", "").strip() or "llm"
-            say(f"LLM  [city]{gateway}[/city]  key from city login", kind="info")
-        elif llm_status == "missing":
-            say(
-                "LLM gateway key missing — run city login "
-                "(downloads the team VK for https://llm.projectnandaitaly.ai)",
-                kind="warn",
-            )
-    human = not as_json
-    harness.log = HarnessLog(stream=sys.stdout, now=harness.started, console=human)
-    configure(console=human)
-    asyncio.run(harness.start())
-    uvicorn.run(
-        create_app(harness, dev=True),
-        host=host,
-        port=chosen,
-        log_config=uvicorn_log_config(console=human),
-    )
-    return facts
-
-
-def _require_loopback(host: str) -> None:
-    name = host.strip().strip("[]").lower()
-    if name in {"localhost", "localhost.localdomain"}:
-        return
-    try:
-        address = ipaddress.ip_address(name)
-    except ValueError as exc:
-        raise CapError("POLICY_VIOLATION", "host") from exc
-    if not address.is_loopback:
-        raise CapError("POLICY_VIOLATION", "host")
-
-
-def _http_base(host: str, port: int) -> str:
-    shown = f"[{host}]" if ":" in host else host
-    return f"http://{shown}:{port}"

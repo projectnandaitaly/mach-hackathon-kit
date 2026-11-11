@@ -51,17 +51,15 @@ city --json status agent:demo
 
 ## Local kit (in-process Deploy)
 
-Use `--api-url local` (or `CITY_PLATFORM_URL=local` / `CITY_DEPLOY_URL=local`) for an **in-process** Deploy service (`init`, `dev`, offline checks).
+Use `--api-url local` (or `CITY_PLATFORM_URL=local` / `CITY_DEPLOY_URL=local`) for an **in-process** Deploy service (`init`, `run`, offline checks).
 
 ```bash
 city --api-url local init agent demo
-cd demo
-city --api-url local dev
-city dev --serve                 # loopback harness; POST /dev/invoke stays local
+city run demo                    # chat with the local brain
 city --api-url local conform --profile fast
 ```
 
-The harness writes public diagnostic logs as one redacted JSON object per line on stdout when `CITY_ENV=cloud`, which Cloud Logging ingests. A local `city dev --serve` prints the same record as a short block instead. `city dev --serve --json` keeps the JSON lines. Uvicorn and FastAPI use the same formatter. Reputation and transactions stay on `city-events`.
+The harness writes public diagnostic logs as one redacted JSON object per line on stdout when `CITY_ENV=cloud`, which Cloud Logging ingests. Uvicorn and FastAPI use the same formatter. Reputation and transactions stay on `city-events`.
 
 ## Commands (overview)
 
@@ -71,7 +69,7 @@ The harness writes public diagnostic logs as one redacted JSON object per line o
 | `city keys init` | Escape hatch: regenerate controller key + register public key |
 | `city init agent <name>` | Create `<name>/` from the agent template; injects the logged-in team into `card.yaml` / `city.yaml`. You set `role` and `service_types` on the card before deploy |
 | `city card validate` | Validate `card.yaml` against the MHM card schema (base roles only) |
-| `city dev` | One local need, or `--serve` a loopback harness with `POST /dev/invoke` |
+| `city run <folder>` | Chat with the local brain in that folder. See [How to develop and test the agent locally](../../docs/kit/e19-rules.md#how-to-develop-and-test-the-agent-locally) |
 | `city conform` | Conformance suite (`--profile full\|fast`, or `--url`) |
 | `city deploy <name>` | Upload + pipeline from `<name>/` under `--root`; releases on PASS (`--runtime`) |
 | `city rollback` / `status` / `delete` | Lifecycle. `city retire` and `city promote` are gone |

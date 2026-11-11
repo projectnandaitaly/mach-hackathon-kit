@@ -22,6 +22,7 @@ A **team** is one competing group. Each team owns one **ASST** (Agency for Socia
 - [Closing a case (ADR-106)](#closing-a-case-adr-106)
 - [Rubric](#rubric)
 - [How to develop an agent](#how-to-develop-an-agent)
+- [How to develop and test the agent locally](#how-to-develop-and-test-the-agent-locally)
 - [Conformance](#conformance)
 - [Models (LLM Gateway)](#models-llm-gateway)
 - [I want to change my agent](#i-want-to-change-my-agent)
@@ -320,33 +321,52 @@ A card declares one `role`: `booking_centre`, `facility`, or `gp` for this hacka
 Citizens choose from the structured fields of an offer, checked against the registry. They do not decide from free text. The rubric scores world and Ledger facts only. Ask the Ledger for the world (`world`), agenda time (`agenda`), and the rules currently in force (`rules`). Apply the protocol table. Do not diagnose and do not invent a dose.
 
 
-### 5. Chat with the agent on your laptop (optional)
+### 5. How to develop and test the agent locally
 
-Before you deploy, you can exercise the brain against an in-memory Relay and Ledger. The city mailbox is not contacted. This runs the brain in the folder you pass; a copy that is already deployed is unchanged until you `city deploy` again.
+From the parent of the agent folders, name the folder. This loads that folder's brain on your laptop. The city mailbox is not contacted, and a copy that is already deployed stays as it is until you `city deploy` again.
 
 ```bash
-city dev --chat --root family_counseling
+city run family_counseling
 ```
 
-The chat asks who you are: `citizen`, `gp`, `booking_centre`, `hospital`, `specialist`, or `family_counseling`. Type a number or `/as citizen`. The same menu lists `\changeCharacter` (back to that list) and `\quitChat` (back to the shell). Both are the whole line and work before or after you pick a character. It then lists the care-journey messages that character sends to this agent, each with what the code means (`CONS-GIN` is gynecology counseling with no prescription, `VIS-CARD` is a cardiology visit that needs one, `VIS-FIS` is a physiatry visit that needs one, `SYM-PALPITATIONS` is the protocol row for `VIS-CARD`). Those moves are listed with the same two commands.
+The folder's card is the brain that runs: `city run gp` is the medico di base, `city run hospital` is the ospedale. Edit `agent/agent.py` while the chat is open. The next line reloads the brain when those sources change.
 
-After that, three kinds of input work:
+The chat asks who you are. Type a number, a name, or `/as <name>`. `\changeCharacter` returns to that list. `\quitChat` or `/quit` leaves.
+
+| You are | Sender | A sentence becomes |
+|---|---|---|
+| `citizen` | `citizen:local/dev` | A `need.request` with your words only. It does not set a symptom code or a prescription |
+| `agent` | `agent:local/peer` | A chat. Put the act word and its `key=value` tokens on that line (`confirm offer_id=…`) |
+| `ledger` | `city:ledger` | A ledger answer. The brain reads the first word (`held`, `committed`, `world`, `prescription`) |
+
+Three stand-ins sit behind the brain. They do not choose a counterparty, a slot, or a doctor.
+
+| City piece | What the local run does |
+|---|---|
+| Index (`city.find`) | Returns one peer, `agent:t05/osp-x`. It does not rank or filter |
+| Mailbox (`city.say`, `city.history`) | Keeps the thread in memory. A `say` to `city:ledger` is answered on the next turn |
+| Ledger | One slot, `slot-local-1`, taken from the agent's service. Answers `world`, `hold slot_id=`, `commit hold_id=`, and `prescription prescription_number=` |
+
+`/rx` issues a prescription on that ledger (`rx-local-1`, procedure taken from the slot). The brain can then be sent `/need rx=rx-local-1`. You can also play the ledger and type the answer yourself. `agenda` and `rules` are not answered here; those reads come back as the local help line.
+
+After you pick a sender, three kinds of input work:
 
 | You type | What happens |
 |---|---|
-| `1` | Send move 1 from the list |
-| `/need symptom=SYM-PALPITATIONS` | That slash command (the whole line) |
-| `I need a visit` | A `need.request` whose text is that sentence. It does not set a symptom code or a prescription |
+| `1` | Send example line 1 for that sender |
+| `/need symptom=SYM-PALPITATIONS` | That slash command (the whole line), as the citizen or the agent |
+| `I need a visit` | The sentence for whoever you are, as in the table above |
 | `/emergency` | `need.request` with `is_emergency: true` |
 | `/rx` then `/need rx=<number>` | Seed a local prescription, then send it |
 | `/checkin bk-local-1` | `checkin` |
-| `/as gp` | Switch character and print the new moves |
-| `\changeCharacter` | Back to the character menu |
-| `/moves` | Print the moves again |
+| `/as ledger` | Switch sender and print that sender's lines |
+| `\changeCharacter` | Back to the sender menu |
+| `/moves` | Print the lines again |
 | `\quitChat` | Leave the chat and return to the shell |
-| `/quit` | Leave (same as `\quitChat`) |
 
-`I have an /emergency` is a sentence, not the emergency command. The chat prints every message the brain says: to the citizen with its `status`, to other agents, and to the Ledger. A local stand-in answers the Ledger requests, so a hold or a `world` read comes back as the next turn. Edit `agent/` while the chat is open: the next line reloads the brain when sources change. A wave still needs `city deploy`.
+`I have an /emergency` is a sentence, not the emergency command. The chat prints every message the brain says: to the citizen with its `status`, to other agents, and to the Ledger.
+
+`city run` does not certify the agent. A wave still needs `city deploy`. `city conform` without `--url` runs a built-in reference agent, not the folder you are editing.
 
 ### 6. Deploy each agent
 
@@ -393,7 +413,7 @@ You do not run a separate certify step. `city deploy` builds the image, rolls ou
 | First release of an agent (nothing serving yet, or `version` still ends in `.0`, such as `1.0.0`) | **Full** — harness checks (brain-policy stages are not gates) |
 | A later `city deploy` of an agent that is already serving | **Fast** — the harness checks that must stay true |
 
-`city dev --chat` exercises the brain on your laptop. It does not replace this gate. `city conform` without `--url` runs a built-in reference agent, not the folder you are editing. Do not use it to decide whether your project is ready.
+`city run` exercises the brain on your laptop. It does not replace this gate. `city conform` without `--url` runs a built-in reference agent, not the folder you are editing. Do not use it to decide whether your project is ready.
 
 ### What the harness already passes
 
@@ -489,7 +509,7 @@ async def main(need, city):
 
 | Where the brain runs | Key it uses | Gateway it calls |
 |---|---|---|
-| `city dev`, `city dev --chat` on your laptop | `~/.config/city/teams/<your team>/llm.vk` from `city login` | `https://llm.projectnandaitaly.ai` |
+| `city run <folder>` on your laptop | `~/.config/city/teams/<your team>/llm.vk` from `city login` | `https://llm.projectnandaitaly.ai` |
 | A released agent, after `city deploy` | The team key the city mounted in the pod | The same Gateway, at its city-internal address |
 
 The harness does not retry a refused call. A failure raises `CapError` with a `code`. Catch it and keep the journey moving without the model:
@@ -634,7 +654,7 @@ The team console is at [projectnandaitaly.ai/team](https://projectnandaitaly.ai/
 
 **Appeals.** A contested rating is reported to City Hall with the rating's `record_id` from the journey view and a short reason. The jury may cancel it.
 
-**Models.** Optional model calls go through `city.llm`, which uses the City LLM Gateway with alias `city-default` under the team's key, both in `city dev` and in a released agent. Usage and estimated spend are on the Wave tab. Every team has the same budget. Details are under [Models (LLM Gateway)](#models-llm-gateway).
+**Models.** Optional model calls go through `city.llm`, which uses the City LLM Gateway with alias `city-default` under the team's key, both in `city run` and in a released agent. Usage and estimated spend are on the Wave tab. Every team has the same budget. Details are under [Models (LLM Gateway)](#models-llm-gateway).
 
 ### What a team may change
 

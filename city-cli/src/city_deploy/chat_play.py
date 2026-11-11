@@ -1,4 +1,4 @@
-"""Characters and moves for ``city dev --chat``.
+"""Characters and moves for ``city run``.
 
 The person at the keyboard plays one role and talks to the local brain.
 Moves are the messages that role actually sends in the care journey.
@@ -12,14 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from cap.core.errors import CapError
+from city_sdk.city import LEDGER
 
 CHARACTERS: tuple[tuple[str, str], ...] = (
-    ("citizen", "A citizen. Most journeys start here."),
-    ("gp", "The medico di base. Applies the protocol table and does not diagnose."),
-    ("booking_centre", "The centro prenotazioni. Books from a prescription."),
-    ("hospital", "The ospedale (physiatry). Serves its own slots and check-ins."),
-    ("specialist", "The cardiology specialista. Visit, report, follow-up."),
-    ("family_counseling", "Consultorio. Free access, no prescription."),
+    ("citizen", "A citizen. A sentence is a need."),
+    ("agent", "Another agent. A sentence is a chat; put the act word in it."),
+    ("ledger", "The ledger. A sentence is its answer (held, committed, world, prescription)."),
 )
 
 # Meta commands. The whole line, any prompt: before a character is picked and after.
@@ -30,25 +28,15 @@ SESSION_COMMANDS: tuple[tuple[str, str], ...] = (
 
 SENDERS: dict[str, str] = {
     "citizen": "citizen:local/dev",
-    "gp": "agent:local/gp",
-    "booking_centre": "agent:local/booking_centre",
-    "hospital": "agent:local/hospital",
-    "specialist": "agent:local/specialist",
-    "family_counseling": "agent:local/family_counseling",
+    "agent": "agent:local/peer",
+    "ledger": LEDGER,
 }
 
 _ALIASES: dict[str, str] = {
     "citizen": "citizen",
-    "gp": "gp",
-    "booking": "booking_centre",
-    "booking_centre": "booking_centre",
-    "booking-centre": "booking_centre",
-    "hospital": "hospital",
-    "facility": "hospital",
-    "specialist": "specialist",
-    "family": "family_counseling",
-    "family_counseling": "family_counseling",
-    "counseling": "family_counseling",
+    "agent": "agent",
+    "ledger": "ledger",
+    "city:ledger": "ledger",
 }
 
 # Catalogue codes the local world and the city wave share.
@@ -264,79 +252,76 @@ def moves_for(actor: str, target: str, *, service: str) -> list[PlayMove]:
             _checkin(sender, "The hospital template records the check-in and confirms it."),
             _emergency(sender, service, "The template escalates and does not hold a peer."),
         ]
-    if actor == "booking_centre" and target in {"hospital", "specialist", "family_counseling"}:
-        procedure = {
-            "hospital": "VIS-FIS",
-            "specialist": "VIS-CARD",
-            "family_counseling": "CONS-GIN",
-        }[target]
+    if actor == "agent":
+        procedure = _procedure(target)
         return [
             PlayMove(
-                f"/need procedure={procedure}",
-                "Ask for slots",
-                f"Centro prenotazioni asks this facility for {procedure}. "
-                + CODES[procedure]
-                + ". Search criteria only: no citizen data before consent. "
-                "The facility template holds a peer instead of listing its own slots, "
-                "unless your brain offers them.",
-                _need(
+                "confirm offer_id=of-slot-local-1 consent_ref=local-ok slot_id=slot-local-1",
+                "Confirm a slot",
+                "An agent confirms of-slot-local-1. The brain reads confirm and the tokens.",
+                _chat(
                     sender,
-                    service,
-                    procedure,
-                    {"service_type": service, "procedure": procedure, "priority": "B"},
+                    "confirm offer_id=of-slot-local-1 consent_ref=local-ok "
+                    "slot_id=slot-local-1 prescription_number=rx-local-1",
                 ),
             ),
             PlayMove(
-                "/confirm offer=of-slot-local-1 consent=local-ok",
-                "Confirm a hold",
-                "Centro prenotazioni confirms a slot after the citizen consented. "
-                "The template facility brain does not read confirm.",
-                {
-                    "type": "confirm",
-                    "from": sender,
-                    "body": {
-                        "offer_id": "of-slot-local-1",
-                        "consent_ref": "local-ok",
-                        "slot_id": "slot-local-1",
-                        "prescription_number": "rx-local-1",
-                    },
-                },
+                f"offer procedure={procedure}",
+                "Offer a slot",
+                f"An agent offers {procedure}. " + CODES.get(procedure, ""),
+                _chat(
+                    sender,
+                    f"offer offer_id=of-slot-local-1 slot_id=slot-local-1 "
+                    f"procedure={procedure} priority=B",
+                ),
+            ),
+            PlayMove(
+                "cancel offer_id=of-slot-local-1 reason=slot_gone",
+                "Cancel an offer",
+                "An agent withdraws of-slot-local-1.",
+                _chat(sender, "cancel offer_id=of-slot-local-1 reason=slot_gone"),
+            ),
+            PlayMove(
+                "booking.receipt booking_id=bk-1 ledger_ref=c-1",
+                "Send a receipt",
+                "An agent sends the booking receipt.",
+                _chat(sender, "booking.receipt booking_id=bk-1 ledger_ref=c-1"),
             ),
         ]
-    if actor in {"hospital", "specialist", "family_counseling"} and target == "booking_centre":
-        procedure = {
-            "hospital": "VIS-FIS",
-            "specialist": "VIS-CARD",
-            "family_counseling": "CONS-GIN",
-        }[actor]
+    if actor == "ledger":
+        procedure = _procedure(target)
         return [
             PlayMove(
-                f"/offer procedure={procedure}",
-                "Offer a slot",
-                f"This facility offers {procedure} to the centro prenotazioni. "
-                + CODES[procedure]
-                + ". The template centro prenotazioni does not read offer messages.",
-                {
-                    "type": "offer",
-                    "from": sender,
-                    "body": {
-                        "offer_id": "of-slot-local-1",
-                        "slot_id": "slot-local-1",
-                        "procedure": procedure,
-                        "priority": "B",
-                    },
-                },
+                "held hold_id=bk-1 slot_id=slot-local-1 fence=1",
+                "Hold accepted",
+                "The ledger held slot-local-1.",
+                _chat(sender, "held hold_id=bk-1 slot_id=slot-local-1 fence=1"),
             ),
             PlayMove(
-                "/cancel offer=of-slot-local-1",
-                "Cancel an offer",
-                "This facility withdraws of-slot-local-1. The template centro prenotazioni "
-                "does not read cancel.",
-                {
-                    "type": "cancel",
-                    "from": sender,
-                    "body": {"offer_id": "of-slot-local-1", "reason": "slot_gone"},
-                },
+                "committed booking_id=bk-1 ledger_ref=c-1 receipt=local",
+                "Booking committed",
+                "The ledger committed the hold.",
+                _chat(sender, "committed booking_id=bk-1 ledger_ref=c-1 receipt=local"),
+            ),
+            PlayMove(
+                "prescription prescription_number=rx-local-1",
+                "Prescription on file",
+                f"The ledger returns rx-local-1 for {procedure}.",
+                _chat(
+                    sender,
+                    f"prescription prescription_number=rx-local-1 procedure={procedure} "
+                    "priority=B state=issued",
+                ),
+            ),
+            PlayMove(
+                "world slots=1",
+                "World slice",
+                "One local slot, in the shape a world answer uses.",
+                _chat(
+                    sender,
+                    "world slots=1 slot_id=slot-local-1 "
+                    f"procedure={procedure} doctor_id=doc-local-1",
+                ),
             ),
         ]
     return []
@@ -377,16 +362,19 @@ def interpret(
         picked = resolve_actor(text)
         if picked is not None:
             return ChatTurn("actor", actor=picked)
-        return ChatTurn("error", message="Pick a character first: 1–6, a name, or /as <name>.")
+        return ChatTurn("error", message="Pick who you are first: 1–3, a name, or /as <name>.")
     if text.isdigit():
         index = int(text)
         if 1 <= index <= len(moves):
             return ChatTurn("send", payload=dict(moves[index - 1].payload))
         return ChatTurn("error", message=f"No move {index} — type /moves")
+    sender = SENDERS[actor]
+    if actor == "ledger" or (actor == "agent" and not text.startswith("/")):
+        return ChatTurn("send", payload=_chat(sender, text))
     from city_deploy.local import chat_line_to_payload
 
     try:
-        payload = chat_line_to_payload(text, service=service, sender=SENDERS[actor])
+        payload = chat_line_to_payload(text, service=service, sender=sender)
     except CapError as exc:
         return ChatTurn("error", message=f"{exc.code}  {exc.message}")
     if payload is None:
@@ -425,6 +413,36 @@ def _session_turn(text: str) -> ChatTurn | None:
     if folded == "\\changecharacter":
         return ChatTurn("actor", message="pick")
     return None
+
+
+def line_hint(actor: str) -> str:
+    """What a free-text line becomes for this sender."""
+    if actor == "agent":
+        return (
+            "A sentence is a chat from an agent. "
+            "Put the act word and its key=value tokens on that line."
+        )
+    if actor == "ledger":
+        return (
+            "A sentence is a ledger answer. "
+            "The brain reads the first word, such as held, committed, world, or prescription."
+        )
+    return (
+        "A sentence is a need.request. It carries your words only, "
+        "not a symptom code or a prescription."
+    )
+
+
+def _procedure(target: str) -> str:
+    return {
+        "hospital": "VIS-FIS",
+        "specialist": "VIS-CARD",
+        "family_counseling": "CONS-GIN",
+    }.get(target, "VIS-CARD")
+
+
+def _chat(sender: str, text: str) -> dict[str, object]:
+    return {"type": "chat", "from": sender, "body": {"text": text}}
 
 
 def _need(
