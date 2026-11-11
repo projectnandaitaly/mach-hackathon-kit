@@ -85,7 +85,37 @@ async def main(need: Need, city: City) -> None:
     await handle(role_of(), city, message, case)
 
 
+def _asks_address(message: Message) -> bool:
+    """True when this turn is a ``data.request`` that names the field ``address``."""
+
+    text = message.text
+    if text:
+        named = False
+        asked = False
+        for token in text.split():
+            bare = token.strip(".,;:!?()\"'")
+            if bare == "data.request":
+                named = True
+            key, eq, value = bare.partition("=")
+            if eq and key == "fields":
+                names = {part.strip() for part in value.split(",") if part.strip()}
+                asked = asked or "address" in names
+        return named and asked
+    if message.type != "data.request":
+        return False
+    raw = message.body.get("fields")
+    if isinstance(raw, list):
+        return "address" in raw
+    if isinstance(raw, str):
+        return "address" in {part.strip() for part in raw.replace(",", " ").split() if part.strip()}
+    return False
+
+
 async def handle(role: str, city: City, message: Message, chat: list[Message]) -> None:
+    street = getattr(city, "address", "")
+    if isinstance(street, str) and street and _asks_address(message):
+        await city.say(message.sender, f"address={street}")
+        return
     if role == "gp":
         await _gp(city, message, chat)
     elif role == "booking_centre":

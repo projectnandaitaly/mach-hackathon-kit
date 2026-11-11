@@ -100,8 +100,10 @@ class Harness:
         resolve_key: KeyResolver | None = None,
         ack_delay: float | None = None,
         llm: LlmConnector | None = None,
+        address: str = "",
     ) -> None:
         self.agent_id = agent_id
+        self.address = address.strip() if isinstance(address, str) else ""
         self._private = private
         self._public = public
         self.public = public
@@ -582,6 +584,7 @@ class Harness:
             inbound=inbound,
             llm=self.llm,
             traceparent=traceparent,
+            address=self.address,
         )
 
     def _remember(

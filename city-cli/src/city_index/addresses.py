@@ -58,6 +58,21 @@ class CivicAddress(TypedDict):
     lat: float
 
 
+# Palazzo Marino, the city hall. DS634 applied civic, edition 2026-10-01.
+# The thinned zone book does not keep this door, so the Ledger is fixed here.
+LEDGER_ADDRESS: CivicAddress = {
+    "label": "Piazza della Scala 2",
+    "lon": 9.190388,
+    "lat": 45.46676,
+}
+
+
+def ledger_address() -> CivicAddress:
+    """The Ledger's door. It does not move with an ASST."""
+
+    return LEDGER_ADDRESS
+
+
 Door = tuple[str, float, float]
 
 

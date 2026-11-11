@@ -358,6 +358,7 @@ class GkeRuntime:
         self.repository = repository
         self._identity = identity
         self._llm_key: Callable[[str], str | None] | None = None
+        self._address: Callable[[Mapping[str, Any]], str] | None = None
         self._probe = probe or _http_health
         self._poll = poll_interval
         self._ready_timeout = ready_timeout
@@ -404,6 +405,11 @@ class GkeRuntime:
 
         self._llm_key = source
 
+    def bind_address(self, source: Callable[[Mapping[str, Any]], str]) -> None:
+        """This agent's own street, read at roll-out from the team's ASST and the card family."""
+
+        self._address = source
+
     def set_traffic(
         self,
         agent_id: str,
@@ -430,6 +436,7 @@ class GkeRuntime:
             # never on the serving Deployment of the previous release.
             self._keep[agent_id] = workload_name(service, version)
             replicas = 0 if percent == 0 or agent_id in self.drained else self._replicas(agent_id)
+        street = self._address(card) if self._address is not None else ""
         rows = workloads(
             agent_id=agent_id,
             version=version,
@@ -440,6 +447,7 @@ class GkeRuntime:
             urls=self.urls,
             ingress_host=self.ingress_host,
             egress=self._egress,
+            address=street if isinstance(street, str) else "",
         )
         if files is not None:
             key, grant = files
@@ -1030,6 +1038,26 @@ def dns_name(value: str) -> str:
     return cleaned
 
 
+def _pod_env(urls: Mapping[str, str], image: str, address: str) -> list[dict[str, str]]:
+    """Process environment. ``CITY_ADDRESS`` is this agent's own street, omitted when unknown."""
+
+    env = [
+        {"name": "CITY_ENV", "value": "cloud"},
+        {"name": "PORT", "value": str(AGENT_CONTAINER_PORT)},
+        {"name": "CITY_RELAY_URL", "value": urls["relay"]},
+        {"name": "CITY_INDEX_URL", "value": urls["index"]},
+        {"name": "CITY_KEY_PATH", "value": f"{_KEY_MOUNT}/{_KEY_FILE}"},
+        {"name": "CITY_GRANT_PATH", "value": f"{_KEY_MOUNT}/{_GRANT_FILE}"},
+        {"name": "CITY_TRUSTED_KEYS_PATH", "value": f"{_KEY_MOUNT}/{_TRUST_FILE}"},
+        {"name": "CITY_IMAGE_DIGEST", "value": image.rsplit("@", 1)[-1]},
+        *_llm_env(urls),
+    ]
+    street = address.strip()
+    if street:
+        env.append({"name": "CITY_ADDRESS", "value": street})
+    return env
+
+
 def workloads(
     *,
     agent_id: str,
@@ -1041,6 +1069,7 @@ def workloads(
     urls: Mapping[str, str],
     ingress_host: str = INGRESS_HOST,
     egress: Sequence[Mapping[str, Any]] = (),
+    address: str = "",
 ) -> list[dict[str, Any]]:
     del agent_id
     account = {
@@ -1115,20 +1144,7 @@ def workloads(
                                 "timeoutSeconds": 2,
                                 "failureThreshold": 3,
                             },
-                            "env": [
-                                {"name": "CITY_ENV", "value": "cloud"},
-                                {"name": "PORT", "value": str(AGENT_CONTAINER_PORT)},
-                                {"name": "CITY_RELAY_URL", "value": urls["relay"]},
-                                {"name": "CITY_INDEX_URL", "value": urls["index"]},
-                                {"name": "CITY_KEY_PATH", "value": f"{_KEY_MOUNT}/{_KEY_FILE}"},
-                                {"name": "CITY_GRANT_PATH", "value": f"{_KEY_MOUNT}/{_GRANT_FILE}"},
-                                {
-                                    "name": "CITY_TRUSTED_KEYS_PATH",
-                                    "value": f"{_KEY_MOUNT}/{_TRUST_FILE}",
-                                },
-                                {"name": "CITY_IMAGE_DIGEST", "value": image.rsplit("@", 1)[-1]},
-                                *_llm_env(urls),
-                            ],
+                            "env": _pod_env(urls, image, address),
                             "volumeMounts": [
                                 {
                                     "name": IDENTITY_SECRET,

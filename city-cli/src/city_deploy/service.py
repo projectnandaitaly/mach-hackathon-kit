@@ -28,6 +28,7 @@ from cap.core.grant import SignedGrant, verify
 from cap.core.keys import KeyPair, PublicKey
 from city.testkit import ephemeral
 from city_conform.runner import Outcome, Report
+from city_index.addresses import address_for
 from city_index.families import family_of, role_permissions
 from city_index.model import AgentRecord
 from city_index.service import IndexService
@@ -198,6 +199,7 @@ class DeployService:
         if isinstance(self.runtime, GkeRuntime):
             self.runtime.bind_identity(self.secrets.pod_material)
             self.runtime.bind_llm_key(self._team_llm_key)
+            self.runtime.bind_address(self._team_address)
         self.sessions: dict[str, TeamSession] = {}
         self.deployments: dict[str, Deployment] = {}
         self.secret_names: dict[str, set[str]] = {}
@@ -445,6 +447,18 @@ class DeployService:
         """The team's Gateway key for its pods. Do not log the result."""
 
         return self.team_keys.read_team(team_id) if team_id else None
+
+    def _team_address(self, card: Mapping[str, Any]) -> str:
+        """The street for this card's team and role family. Empty when either is unknown."""
+
+        team = str(card.get("team", "")).removeprefix("team:")
+        held = self.teams.assignment(team) if team else None
+        asst = held.get("asst") if held is not None else None
+        family = family_of(card)
+        if not isinstance(asst, str) or not asst or family is None:
+            return ""
+        door = address_for(asst, family)
+        return "" if door is None else door["label"]
 
     def _audit(self, message: str, agent_id: str) -> None:
         if self.shared is not None:

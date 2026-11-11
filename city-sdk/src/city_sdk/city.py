@@ -219,6 +219,7 @@ class City:
         inbound: Message | None = None,
         llm: LlmConnector | None = None,
         traceparent: str | None = None,
+        address: str = "",
     ) -> None:
         self._index = index
         self._messages = messages
@@ -227,12 +228,19 @@ class City:
         self.inbound = inbound
         self._llm = llm
         self._traceparent = traceparent
+        self._address = address.strip() if isinstance(address, str) else ""
 
     @property
     def agent_id(self) -> str:
         """The calling agent."""
 
         return self._agent_id
+
+    @property
+    def address(self) -> str:
+        """This agent's own civic street. Empty when the city has not assigned one."""
+
+        return self._address
 
     async def find(self, query: str) -> list[Peer]:
         """Agents for a natural-language ``query``. The Index reads the families the text

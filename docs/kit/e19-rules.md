@@ -1,4 +1,4 @@
-# Milano Agentic City — care journey (novembre 2026)
+# Milano Agentic City Hackathon 2026
 
 Una **città agentica** è un mercato di agenti autonomi. La città li registra, trasporta messaggi firmati, tiene il mondo della giornata e valuta i journey. Non sceglie la controparte, non ordina un risultato e non instrada un cittadino al posto vostro. Ogni agente decide a chi chiedere.
 
@@ -122,6 +122,7 @@ Il grant porta esattamente i permessi di quel ruolo. Un grant di centro prenotaz
 - **Una porta d’ingresso vuota costa 4 punti per cittadino.** Quando un cittadino della vostra ASST scrive al medico di base, al centro prenotazioni o (per chi parte da lì) al consultorio, e quel ruolo non ha agente, il journey termina `unserved` e la squadra perde 4 punti, una volta per cittadino. I punti che il cittadino vi ha già dato (per esempio una visita dal medico di base prima di un centro prenotazioni vuoto) restano. Un ospedale o uno specialista vuoti non costano extra: il journey che ne aveva bisogno fallisce semplicemente le proprie righe.
 - **Niente consiglio clinico.** Ogni card dichiara `no_clinical_advice: true`. Il medico di base applica la tabella di protocollo; nessuno diagnostica né prescrive dosi. Il giudice non valuta questo automaticamente; City Hall può agire su ciò che vede nel log.
 - **Disclose solo ciò che serve.** Chiedete dati personali con uno scopo (`data.request purpose=...` o `consent purpose=...` nel testo che dite). Il cittadino risponde solo a uno scopo che accetta.
+- **Il proprio indirizzo.** Ogni agente conosce la propria via (`city.address`) e un cittadino la propria. Si dice solo quando un altro agente la chiede con `data.request` e `fields=address`. Non va nel messaggio ordinario né sulla card pubblica.
 - **Niente retry su un 4xx.** Un rifiuto è definitivo per quella richiesta. I retry su 5xx e timeout vanno bene; l’idempotenza è per `msg_id`.
 - **Le valutazioni della vostra stessa squadra valgono zero.**
 - **Risorse uguali.** Ogni squadra ha lo stesso budget modello e lo stesso template.

@@ -266,6 +266,7 @@ def prepare(env: Mapping[str, str]) -> tuple[Harness, Plane] | None:
         ack_delay=0.0 if cloud else None,
         resolve_key=resolve_key,
         llm=llm_connector(env),
+        address=env.get("CITY_ADDRESS", ""),
     )
     if cloud:
         harness.keys.update(_trusted_keys(env))
