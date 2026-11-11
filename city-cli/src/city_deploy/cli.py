@@ -398,21 +398,16 @@ def keys_rotate(
 def init_agent(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="New folder name under --root (agent slug)."),
-    role: str = typer.Option(
-        "booking_centre",
-        "--role",
-        help="Role family: booking_centre, gp, hospital, specialist_care, family_counseling.",
-    ),
     root: Path = typer.Option(
         Path("."),
         "--root",
         help="Parent directory. Creates <root>/<name>/ with the template.",
     ),
 ) -> None:
-    """Scaffold a local agent project from the city agent template."""
+    """Scaffold a local agent project. Set role and service_types in card.yaml before deploy."""
     try:
         team_id = resolve_active_team(root=root)
-        payload = init_project(root, name, role=role, team_id=team_id)
+        payload = init_project(root, name, team_id=team_id)
     except CapError as exc:
         _fail(ctx, exc)
         raise typer.Exit(code=1) from exc
@@ -425,7 +420,9 @@ def init_agent(
     )
     if _state(ctx).get("json") is not True:
         say(
-            f"Next: [mute]city card validate {name} && city deploy {name}[/mute]",
+            f"Next: edit [mute]{name}/card.yaml[/mute] (role, service_types) and "
+            f"[mute]{name}/city.yaml[/mute] role, then "
+            f"[mute]city card validate {name} && city deploy {name}[/mute]",
             kind="info",
         )
 

@@ -18,15 +18,15 @@ uv tool list | grep city-cli  # expect a current release
 
 ## What you field
 
-One agent per role, all from the same scaffold (`city init agent … --role …`):
+One agent per role. `city init agent <name>` copies the same scaffold into a new folder. You set the seat on the card before you deploy:
 
-| Role | `--role` |
-|------|----------|
-| Centro prenotazioni | `booking_centre` |
-| Ospedale | `hospital` |
-| Medico di base | `gp` |
-| Specialista | `specialist_care` |
-| Consultorio | `family_counseling` |
+| Seat | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+|------|--------------------|-----------------|--------------------|
+| Centro prenotazioni | `booking_centre` | `booking_centre` | `booking_centre` |
+| Ospedale | `facility` | `hospital.physiatry` | `facility` |
+| Medico di base | `gp` | `gp` | `gp` |
+| Specialista | `facility` | `specialist_care.cardiology` | `facility` |
+| Consultorio | `facility` | `family_counseling.gynecology` | `facility` |
 
 Deploy the template as it is first. It already runs a care journey and is meant to carry **levels 1–3**. From level 4 onward you change the brain to earn more.
 

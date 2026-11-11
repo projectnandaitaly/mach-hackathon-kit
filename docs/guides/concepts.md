@@ -10,13 +10,13 @@ The city **registers**, **transports**, **observes**, and **enforces policy**. I
 
 Each team owns one **ASST** (Agency for Social Support in the Territory — a local health authority) and must field **five agents**, one per role:
 
-| Role | `city init --role` | Card `role` |
-|------|--------------------|-------------|
+| Role | `card.yaml` `role` | `service_types` |
+|------|--------------------|-----------------|
 | Booking centre | `booking_centre` | `booking_centre` |
-| Hospital | `hospital` | `facility` |
+| Hospital | `facility` | `hospital.physiatry` |
 | GP | `gp` | `gp` |
-| Specialist | `specialist_care` | `facility` |
-| Family counseling | `family_counseling` | `facility` |
+| Specialist | `facility` | `specialist_care.cardiology` |
+| Family counseling | `facility` | `family_counseling.gynecology` |
 
 The city plays the citizens and holds cloud credentials. Teams compete to be the best ASST while City Hall raises difficulty.
 

@@ -1,8 +1,16 @@
 # Agent template
 
-One template for every role. `city init agent <name> --role <family>` copies it and writes the family into the card (`booking_centre`, `gp`, `hospital`, `specialist_care`, or `family_counseling`). For hospital / specialist / consultorio the card `role` is `facility`; the family lives in `service_types` and `CITY_ROLE`.
+One template for every seat. `city init agent <name>` copies it and writes your team and a new agent id. You set the seat yourself, in `card.yaml` (`role` and `service_types`) and the same `role` in `city.yaml`:
 
-The brain is a **care-protocol** agent: one inbound message, one protocol step. Case history is the state. Deployed unchanged it is meant to carry levels 1–3; from level 4 you change `agent/agent.py` to earn more.
+| Seat | `role` | `service_types` |
+|---|---|---|
+| Centro prenotazioni | `booking_centre` | `booking_centre` |
+| Medico di base | `gp` | `gp` |
+| Ospedale | `facility` | `hospital.physiatry` |
+| Specialista | `facility` | `specialist_care.cardiology` |
+| Consultorio | `facility` | `family_counseling.gynecology` |
+
+The brain is a **care-protocol** agent: one inbound message, one protocol step. Case history is the state. Deployed with the card set, it is meant to carry levels 1–3; from level 4 you change `agent/agent.py` to earn more.
 
 ## SDK surface
 
@@ -20,13 +28,13 @@ The brain is a **care-protocol** agent: one inbound message, one protocol step. 
 
 ## What each role does
 
-| `--role` | Care steps |
+| Seat | Care steps |
 |---|---|
 | `gp` | Protocol lookup → `prescribe …` to the Ledger, or `escalate.emergency` on a red flag → close with the citizen |
 | `booking_centre` | Verify `prescription` → ask constraints → `offer` slots from `world` → ask the facility to book → forward `booking.receipt` (**never** closes) |
-| `hospital` | Own slots → `hold` / `commit` → `checkin` → close after check-in |
-| `specialist_care` | Same as hospital, then `report` (and optional follow-up `prescribe`) → close after the report |
-| `family_counseling` | Direct access without a prescription; book and check-in; close at the last step |
+| `hospital` (`service_types: hospital.physiatry`) | Own slots → `hold` / `commit` → `checkin` → close after check-in |
+| `specialist_care` (`service_types: specialist_care.cardiology`) | Same as hospital, then `report` (and optional follow-up `prescribe`) → close after the report |
+| `family_counseling` (`service_types: family_counseling.gynecology`) | Direct access without a prescription; book and check-in; close at the last step |
 
 Write the act word and its `key=value` tokens in the text you say. Citizens and the judge read those.
 

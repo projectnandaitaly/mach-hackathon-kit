@@ -1,7 +1,15 @@
 # Centro prenotazioni (booking centre)
 
 ```bash
-city init agent booking_centre --role booking_centre
+city init agent booking_centre
+```
+
+Then set the card (and the same role in `city.yaml`):
+
+```yaml
+role: booking_centre
+service_types:
+  - booking_centre
 ```
 
 ## What the template already does

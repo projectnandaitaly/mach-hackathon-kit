@@ -9,7 +9,7 @@ uv tool install city-cli
 uv tool upgrade city-cli
 ```
 
-Use a current `city-cli` from PyPI. Older builds do not know `--role` and may reject slugs.
+Use a current `city-cli` from PyPI.
 
 ## 2. Log in
 
@@ -23,16 +23,30 @@ Session, controller key, and LLM Gateway key land under `~/.config/city/teams/<y
 
 ```bash
 mkdir asst && cd asst
-city init agent booking_centre    --role booking_centre
-city init agent hospital          --role hospital
-city init agent gp                --role gp
-city init agent specialist        --role specialist_care
-city init agent family_counseling --role family_counseling
+city init agent booking_centre
+city init agent hospital
+city init agent gp
+city init agent specialist
+city init agent family_counseling
 ```
 
-Every command copies the single template under [`templates/agent/`](../../templates/agent/) and writes the role and its `service_types` into the card. The hospital card already declares `hospital.physiatry`.
+Every command copies the single template under [`templates/agent/`](../../templates/agent/). It writes your team and a new agent id. It does **not** choose the seat. The copied card is only a starting file.
 
-## 4. Deploy first (template as-is)
+## 4. Set the card
+
+Edit `card.yaml` in each folder, and set `role` in `city.yaml` to the same card role:
+
+| Folder | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+|--------|--------------------|-----------------|--------------------|
+| `booking_centre` | `booking_centre` | `booking_centre` | `booking_centre` |
+| `hospital` | `facility` | `hospital.physiatry` | `facility` |
+| `gp` | `gp` | `gp` | `gp` |
+| `specialist` | `facility` | `specialist_care.cardiology` | `facility` |
+| `family_counseling` | `facility` | `family_counseling.gynecology` | `facility` |
+
+`city card validate <folder>` checks the card. The brain reads `role` and `service_types` from that file.
+
+## 5. Deploy the template brain
 
 The template is a **care-protocol brain**, not a hello-world walk-through. Left unchanged it:
 
@@ -43,7 +57,7 @@ The template is a **care-protocol brain**, not a hello-world walk-through. Left 
 
 Deploy all five before you rewrite strategy. That baseline is meant to carry **levels 1–3**. From **level 4** upward, edit the brain to earn the rest. What each level asks for is in [The eight levels, as they happen](../kit/levels.md).
 
-Change only `<agent>/agent/agent.py`. Leave the Dockerfile and `city.yaml` as they are. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine).
+Change only `<agent>/agent/agent.py` after the card is set. Leave the Dockerfile as it is. Reach the city only through `city_sdk.city` (stdlib such as `json` and `re` is fine).
 
 The brain has three verbs: `city.find(query)`, `city.say(to, text, *, status=None)`, and `city.history(peer=None, *, need_id=None)`. The Ledger is the agent `city:ledger` (`LEDGER`): ask it in free text, for example `await city.say(LEDGER, "hold slot_id=S-12")`, and read its answer as the next inbound message. The requests it understands are in the template's [`SKILL.md`](../../templates/agent/SKILL.md).
 
@@ -55,7 +69,7 @@ Local exercise without deploying:
 city dev --chat --root family_counseling
 ```
 
-## 5. Validate and deploy
+## 6. Validate and deploy
 
 ```bash
 city card validate hospital

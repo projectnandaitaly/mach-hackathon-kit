@@ -28,7 +28,8 @@ This provides the `city` command. It depends on [`city-sdk`](https://pypi.org/pr
 ```bash
 city login                    # opens a link; sign in to City Hall → ~/.config/city/teams/<roster>/ (session, controller key, llm.vk)
 city init agent demo          # creates ./demo/ with the template (no secrets inside)
-# edit demo/card.yaml role if needed (booking_centre|facility|gp|b2b)
+# edit demo/card.yaml: role and service_types
+# edit demo/city.yaml: role (same value as the card)
 city card validate demo       # from the parent folder
 city deploy demo              # from the parent folder; always promotes on PASS
 city status agent:demo        # team filled from city login; agent:t07/demo still works
@@ -68,7 +69,7 @@ The harness writes public diagnostic logs as one redacted JSON object per line o
 |---|---|
 | `city login` | Like `gcloud auth login`: the CLI listens on `127.0.0.1`, opens a City Hall link, and the browser redirects back once you are signed in — no code to confirm (ADR-029, PKCE). The roster team comes from the browser. Also downloads the team City LLM Gateway virtual key to `llm.vk` (ADR-031; lazy-ensured if the team predated the feature). `--no-browser` prints a code to approve on another device. Optional `--team` only asserts a private expectation (mismatch never names the other team). `--api-url local` requires `--team` and self-approves. |
 | `city keys init` | Escape hatch: regenerate controller key + register public key |
-| `city init agent <name>` | Create `<name>/` from a starter template (`--template booking_centre\|facility\|gp\|specialist\|family_counseling\|b2b`); injects the logged-in team into `card.yaml` / `city.yaml`; agent type is `card.yaml` `role` |
+| `city init agent <name>` | Create `<name>/` from the agent template; injects the logged-in team into `card.yaml` / `city.yaml`. You set `role` and `service_types` on the card before deploy |
 | `city card validate` | Validate `card.yaml` against the MHM card schema (base roles only) |
 | `city dev` | One local need, or `--serve` a loopback harness with `POST /dev/invoke` |
 | `city conform` | Conformance suite (`--profile full\|fast`, or `--url`) |

@@ -22,7 +22,7 @@ Appendix: [Concepts](../guides/concepts.md) · [Glossary](../guides/glossary.md)
 
 - [Medico di base (GP)](gp.md)
 - [Centro prenotazioni (booking centre)](booking_centre.md)
-- [Facility](facility.md) — hospital, specialist, consultorio (`--role hospital` / `specialist_care` / `family_counseling`)
+- [Facility](facility.md) — hospital, specialist, consultorio (`role: facility` plus the service type)
 
 ## Speech and acts
 

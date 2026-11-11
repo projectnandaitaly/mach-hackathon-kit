@@ -61,15 +61,8 @@ def _local_catalogue(service: str) -> tuple[str, str, bool]:
     return ("VIS-CARD", "cardiology", True)
 
 
-# One template for every role (ADR-110). A role sets the card's role and service types.
+# One template for every role (ADR-110). The team sets role and service_types on the card.
 TEMPLATE = "agent"
-ROLE_CARDS: dict[str, tuple[str, str]] = {
-    "booking_centre": ("booking_centre", "booking_centre"),
-    "gp": ("gp", "gp"),
-    "hospital": ("facility", "hospital.physiatry"),
-    "specialist_care": ("facility", "specialist_care.cardiology"),
-    "family_counseling": ("facility", "family_counseling.gynecology"),
-}
 _LOCAL_PEER = Peer("agent:t05/osp-x", service="lab", district=8, role="hospital")
 _SLUG = "agent-uno"
 _TEAM = "t07"
@@ -90,21 +83,20 @@ def init_project(
     root: Path,
     name: str,
     *,
-    role: str = "booking_centre",
     team_id: str,
     rid: Callable[[], str] | None = None,
 ) -> dict[str, str]:
-    """Scaffold ``root/<name>/`` from the agent template, for ``role``.
+    """Scaffold ``root/<name>/`` from the agent template.
 
     ``--root`` is the parent directory. The agent project always lands in a
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
     template placeholder in ``card.yaml`` / ``city.yaml``. ``agent_id`` and
     ``endpoints.mailbox`` are both ``agent:<rid>``, a fresh 12-character id.
+    Role and ``service_types`` stay as the template wrote them: the team edits
+    ``card.yaml`` (and the same ``role`` in ``city.yaml``) before deploy.
     Team credentials stay in the user config store
     (``~/.config/city/teams/<team>/``), not inside the project.
     """
-    if role not in ROLE_CARDS:
-        raise CapError("SCHEMA_INVALID", "role")
     if re.fullmatch(r"[a-z0-9_-]+", name) is None:
         raise CapError("SCHEMA_INVALID", "name")
     if re.fullmatch(r"[a-z0-9_-]+", team_id) is None:
@@ -136,14 +128,9 @@ def init_project(
         target.write_text(text, encoding="utf-8")
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
-    card_role, service_type = ROLE_CARDS[role]
-    _set_yaml_field(dest / "card.yaml", "role", card_role)
-    _set_yaml_list(dest / "card.yaml", "service_types", [service_type])
-    _set_yaml_field(dest / "city.yaml", "role", card_role)
     write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
     return {
         "template": TEMPLATE,
-        "role": role,
         "name": name,
         "team": team_id,
         "path": str(dest),
@@ -184,25 +171,6 @@ def _set_yaml_field(path: Path, key: str, value: str) -> None:
     path.write_text(
         "\n".join(out) + ("\n" if text.endswith("\n") or not text else ""), encoding="utf-8"
     )
-
-
-def _set_yaml_list(path: Path, key: str, values: list[str]) -> None:
-    """Replace a top-level ``key:`` block list in a flat YAML file."""
-
-    lines = path.read_text(encoding="utf-8").splitlines()
-    out: list[str] = []
-    skipping = False
-    for line in lines:
-        if skipping and line.startswith("  - "):
-            continue
-        skipping = False
-        if line == f"{key}:":
-            out.append(line)
-            out.extend(f"  - {value}" for value in values)
-            skipping = True
-            continue
-        out.append(line)
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 def flat_field(text: str, key: str) -> str | None:

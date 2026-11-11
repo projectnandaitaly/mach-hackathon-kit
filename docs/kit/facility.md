@@ -1,14 +1,18 @@
 # Facility (hospital, specialist, consultorio)
 
-Three roles share the facility card shape. Scaffold each with its own `--role`:
+Three seats share the facility card. Scaffold a folder, then set `role: facility` and the service type for that seat. Set `city.yaml` `role` to `facility` as well.
 
 ```bash
-city init agent hospital          --role hospital
-city init agent specialist        --role specialist_care
-city init agent family_counseling --role family_counseling
+city init agent hospital
+city init agent specialist
+city init agent family_counseling
 ```
 
-Card `role` is `facility`. The family is in `service_types` (`hospital.physiatry`, `specialist_care.cardiology`, `family_counseling.gynecology`).
+| Folder | `service_types` |
+|--------|-----------------|
+| `hospital` | `hospital.physiatry` |
+| `specialist` | `specialist_care.cardiology` |
+| `family_counseling` | `family_counseling.gynecology` |
 
 ## What the template already does
 

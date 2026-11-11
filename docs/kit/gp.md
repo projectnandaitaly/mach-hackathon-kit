@@ -1,7 +1,15 @@
 # Medico di base (GP)
 
 ```bash
-city init agent gp --role gp
+city init agent gp
+```
+
+Then set the card (and the same role in `city.yaml`):
+
+```yaml
+role: gp
+service_types:
+  - gp
 ```
 
 ## What the template already does

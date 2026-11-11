@@ -31,13 +31,13 @@ A **team** is one competing group. Each team owns one **ASST** (Agency for Socia
 
 Each team runs one **ASST**, a local health authority, with five agents:
 
-| Agent | `city init --role` | Card `role` | `service_types` | Does |
-|---|---|---|---|---|
-| centro prenotazioni | `booking_centre` | `booking_centre` | `booking_centre` | Takes a citizen with a prescription, finds slots inside and outside its ASST, presents offers, books, delivers the receipt |
-| Ospedale | `hospital` | `facility` | `hospital.physiatry` | Serves the slots of its doctors, holds and commits them on the Ledger, records check-ins |
-| Medico di base | `gp` | `gp` | `gp` | Applies the protocol table to a symptom, issues a prescription or escalates a red flag |
-| Specialista | `specialist_care` | `facility` | `specialist_care.cardiology` | Runs the visit, files the report, issues a follow-up prescription when the journey needs one |
-| Consultorio | `family_counseling` | `facility` | `family_counseling.gynecology` | Direct access without a prescription; stricter about personal data |
+| Agent | Card `role` | `service_types` | Does |
+|---|---|---|---|
+| centro prenotazioni | `booking_centre` | `booking_centre` | Takes a citizen with a prescription, finds slots inside and outside its ASST, presents offers, books, delivers the receipt |
+| Ospedale | `facility` | `hospital.physiatry` | Serves the slots of its doctors, holds and commits them on the Ledger, records check-ins |
+| Medico di base | `gp` | `gp` | Applies the protocol table to a symptom, issues a prescription or escalates a red flag |
+| Specialista | `facility` | `specialist_care.cardiology` | Runs the visit, files the report, issues a follow-up prescription when the journey needs one |
+| Consultorio | `facility` | `family_counseling.gynecology` | Direct access without a prescription; stricter about personal data |
 
 All the ASSTs developed by all the teams form a ring: each one lacks something another one has, so some citizens can only be served across ASSTs.
 
@@ -124,7 +124,7 @@ The grant carries exactly that role's permissions. A centro prenotazioni grant c
 
 ## Templates
 
-`city init agent <name> --role <family>` copies the single agent template into a new folder and writes your team and role into it. The family is `booking_centre`, `gp`, `hospital`, `specialist_care`, or `family_counseling`. A project has:
+`city init agent <name>` copies the single agent template into a new folder and writes your team and a new agent id into it. It does not choose the seat. You set `role` and `service_types` in `card.yaml`, and the same `role` in `city.yaml`, before you deploy. A project has:
 
 | File | What it is |
 |---|---|
@@ -271,21 +271,29 @@ Skip this step if your team already has all five under `asst/` (for example lamb
 
 ```bash
 mkdir asst && cd asst
-city init agent booking_centre    --role booking_centre
-city init agent hospital          --role hospital
-city init agent gp                --role gp
-city init agent specialist        --role specialist_care
-city init agent family_counseling --role family_counseling
+city init agent booking_centre
+city init agent hospital
+city init agent gp
+city init agent specialist
+city init agent family_counseling
 ```
 
-Each command copies the same agent template into a folder with `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md`, and a `Dockerfile`, and writes the role and its `service_types` into the card. The card's `team` is `team:<your team>`. `agent_id` and `endpoints.mailbox` are both `agent:` plus a new 12-character id. `name` is the folder name.
+Each command copies the same agent template into a folder with `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md`, and a `Dockerfile`. The card's `team` is `team:<your team>`. `agent_id` and `endpoints.mailbox` are both `agent:` plus a new 12-character id. `name` is the folder name. `role` and `service_types` are still the template's starting values. Set them before deploy:
+
+| Folder | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+|---|---|---|---|
+| `booking_centre` | `booking_centre` | `booking_centre` | `booking_centre` |
+| `hospital` | `facility` | `hospital.physiatry` | `facility` |
+| `gp` | `gp` | `gp` | `gp` |
+| `specialist` | `facility` | `specialist_care.cardiology` | `facility` |
+| `family_counseling` | `facility` | `family_counseling.gynecology` | `facility` |
 
 
 
 
 ### 4. Brain (optional for a first deploy)
 
-Deploy the template as it is first. It already runs the care protocol for each role (prescribe / escalate, offer and book, hold / commit / check-in / report) and passes conformance. That baseline is meant to carry levels 1–3. From level 4 upward, change behaviour only in `<agent>/agent/agent.py`. Leave the Dockerfile and `city.yaml` as they are.
+Deploy the template brain once the card is set. It already runs the care protocol for each role (prescribe / escalate, offer and book, hold / commit / check-in / report) and passes conformance. That baseline is meant to carry levels 1–3. From level 4 upward, change behaviour only in `<agent>/agent/agent.py`. Leave the Dockerfile as it is.
 
 | Agent | Brain file |
 |---|---|
@@ -389,7 +397,7 @@ You do not run a separate certify step. `city deploy` builds the image, rolls ou
 
 ### What the harness already passes
 
-Leave `Dockerfile` and `city.yaml` as the template wrote them. The suite then checks, without your code, that:
+Leave the `Dockerfile` as the template wrote it. Set `role` in `city.yaml` to the card's role and leave the rest of that file. The suite then checks, without your code, that:
 
 - `/card` and `/.well-known/agent-card.json` match, the digest matches `/health`, and the card declares `no_clinical_advice: true`, a known `role`, and at least one `service_types` entry
 - `/health` answers `live` and `ready`
@@ -722,7 +730,7 @@ The console opens on **Assignment**: your ASST, and one card per role family wit
 
 ### 2. Install the CLI, create the agents, and deploy
 
-The full command chain — upgrade `city-cli` to **0.9.83+**, `city login`, `city init` (if needed), the hospital card fix, optional brain edits, `city card validate`, and `city deploy` in the specialist-first order — is under [How to develop an agent](#how-to-develop-an-agent). Follow those steps until every agent is `visible`.
+The full command chain — `city login`, `city init`, set `role` and `service_types` on each card (and the same `role` in `city.yaml`), `city card validate`, and `city deploy` in the specialist-first order — is under [How to develop an agent](#how-to-develop-an-agent). Follow those steps until every agent is `visible`.
 
 Only one person per team needs to deploy, but every member may log in.
 
