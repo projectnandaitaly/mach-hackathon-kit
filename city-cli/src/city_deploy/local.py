@@ -506,6 +506,9 @@ def _print_legend() -> None:
         "[log]log[/log]  agent logs     "
         "[out]out[/out]  what the agent answers"
     )
+    console.print(
+        "[ask]citizen >[/ask]  sent to the model     [reply]agent >[/reply]  the model's reply"
+    )
 
 
 def _print_agent_logs(
@@ -514,11 +517,11 @@ def _print_agent_logs(
     prints: Sequence[tuple[float, str, str]] = (),
 ) -> None:
     """Harness lines, ``logging`` records, and ``print()`` lines, in time order."""
-    blocks: list[tuple[str, str, str]] = []
+    blocks: list[tuple[str, str, str, str | None]] = []
     messages: set[str] = set()
     for line in lines:
         severity, text = _format_chat_log(line)
-        blocks.append((str(line.get("time", "")), severity, text))
+        blocks.append((str(line.get("time", "")), severity, text, _chat_style(severity)))
         raw = line.get("message")
         if isinstance(raw, str) and raw:
             messages.add(raw)
@@ -528,7 +531,14 @@ def _print_agent_logs(
         # is what tells logging.debug apart from a harness line.
         built["category"] = record.name
         severity, text = _format_chat_log(built)
-        blocks.append((str(built.get("time", "")), severity, text))
+        blocks.append(
+            (
+                str(built.get("time", "")),
+                severity,
+                text,
+                _chat_style(severity, getattr(record, "llm_turn", None)),
+            )
+        )
         messages.add(record.getMessage())
     for when, stream, text in prints:
         if _logging_echo(text, messages):
@@ -536,15 +546,9 @@ def _print_agent_logs(
         stamp = datetime.fromtimestamp(when, UTC).isoformat()
         clock = stamp[11:19] if len(stamp) >= 19 else stamp
         label = "PRINT" if stream == "stdout" else "STDERR"
-        blocks.append((stamp, "INFO", f"{clock} {label} {text}"))
+        blocks.append((stamp, "INFO", f"{clock} {label} {text}", None))
     blocks.sort(key=lambda item: item[0])
-    for _stamp, severity, text in blocks:
-        if severity in {"ERROR", "CRITICAL"}:
-            style: str | None = "bad"
-        elif severity == "WARNING":
-            style = "warn"
-        else:
-            style = None
+    for _stamp, _severity, text, style in blocks:
         transcript("log", text, style=style)
 
 
@@ -554,6 +558,20 @@ def _logging_echo(line: str, messages: set[str]) -> bool:
     if not head.startswith(("DEBUG:", "INFO:", "WARNING:", "ERROR:", "CRITICAL:")):
         return False
     return any(message and message in line for message in messages)
+
+
+def _chat_style(severity: str, turn: object = None) -> str | None:
+    """Hue for one log row. A failure stays red. A model prompt and reply take their own."""
+
+    if severity in {"ERROR", "CRITICAL"}:
+        return "bad"
+    if severity == "WARNING":
+        return "warn"
+    if turn == "in":
+        return "ask"
+    if turn == "out":
+        return "reply"
+    return None
 
 
 def _format_chat_log(line: Mapping[str, object]) -> tuple[str, str]:

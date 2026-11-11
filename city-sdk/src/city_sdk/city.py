@@ -51,6 +51,38 @@ def is_citizen(party: str) -> bool:
     return party.startswith("citizen:")
 
 
+def _agent_label(agent_id: str) -> str:
+    """The name after ``agent:<team>/``, used as the speaker of a model reply."""
+
+    name = agent_id.rsplit("/", 1)[-1].strip()
+    return name or "agent"
+
+
+def _llm_speaker(role: str, agent: str) -> str:
+    """A prompt line speaks as the citizen, unless it is already the agent's own line."""
+
+    if role == "assistant":
+        return agent
+    if role == "user":
+        return "citizen"
+    return role or "citizen"
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _log_llm(kind: str, label: str, text: str, *, agent_id: str, need_id: str | None) -> None:
+    """One spoken line. ``kind`` is ``in`` for the prompt and ``out`` for the reply."""
+
+    _LOG.info(
+        "%s > %s",
+        label,
+        _one_line(text),
+        extra={"agent_id": agent_id, "need_id": need_id, "llm_turn": kind},
+    )
+
+
 @dataclass(frozen=True)
 class Message:
     """One mailbox message as the brain sees it. The body is read-only.
@@ -321,6 +353,15 @@ class City:
             raise CapError("KEY_UNKNOWN", "llm gateway key is missing")
         sent: list[object] = [dict(item) for item in messages]
         bound = need_id if need_id is not None else (self.inbound.need_id if self.inbound else None)
+        agent = _agent_label(self._agent_id)
+        for item in messages:
+            _log_llm(
+                "in",
+                _llm_speaker(item["role"], agent),
+                item["content"],
+                agent_id=self._agent_id,
+                need_id=bound,
+            )
         try:
             out = await self._llm.complete(sent, need_id=bound)
         except Exception as exc:
@@ -339,6 +380,13 @@ class City:
             raise
         model = out.get("model")
         content = out.get("content")
+        _log_llm(
+            "out",
+            agent,
+            content if isinstance(content, str) else "",
+            agent_id=self._agent_id,
+            need_id=bound,
+        )
         if isinstance(content, str) and len(content) > 160:
             preview: object = content[:160] + "…"
         else:

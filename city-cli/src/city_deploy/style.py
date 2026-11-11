@@ -33,6 +33,9 @@ _THEME = Theme(
         "you": "bold #8ecbff",
         "log": "#e6c36a",
         "out": "#7dcea0",
+        # Model exchange inside the log gutter. Lilac is what was sent, peach is the reply.
+        "ask": "#d7b3ff",
+        "reply": "#ffb085",
     }
 )
 
