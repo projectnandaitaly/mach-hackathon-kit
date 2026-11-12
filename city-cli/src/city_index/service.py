@@ -22,15 +22,29 @@ from city_index.auth import DEPLOY, PROBER, TEAM, require_role
 from city_index.cache import QueryCache, QueryCachePort
 from city_index.catalog import Catalog
 from city_index.citizens import CitizenKeys, is_citizen
-from city_index.families import FAMILIES, family_of
+from city_index.families import COUNTERPARTS, FAMILIES, card_capabilities, family_of
 from city_index.ports import Clock, EventPublisher, SystemClock
 from city_index.query import cache_key, latest_per_team, matches, shuffle, summary
 from city_index.reputation import NoReputation, ReputationPort
-from city_index.search import Resolver, families_for, ledger_row
-from city_index.visibility import TEAM_RESTORE
+from city_index.search import (
+    Resolver,
+    capability_fits,
+    ledger_row,
+    mentioned_capabilities,
+    named_families,
+)
+from city_index.visibility import DEFAULT_QUERY, TEAM_RESTORE
 from city_index.watch import WatchHub
 
 log = logging.getLogger("city.index")
+
+
+def _row_capabilities(row: Mapping[str, Any]) -> list[str]:
+    raw = row.get("capabilities")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, str)]
+
 
 LEDGER_KID = "city:ledger#k1"
 
@@ -370,20 +384,79 @@ class IndexService:
         return {"agents": payload}
 
     def search(self, *, caller: str, query: object) -> dict[str, Any]:
-        """ADR-110: the families the text names, and for each the rows of ``query``."""
+        """Families the text names, kept when the caller's role can use them.
 
-        families = families_for(query, self.resolver)
+        A named capability (``cardiology``, ``gp``) keeps only cards that list it.
+        The rows stay the unordered role query. The caller is not a candidate
+        for itself.
+        """
+
+        named = named_families(query, self.resolver)
+        caller_family = self._caller_family(caller)
+        text = query if isinstance(query, str) else ""
+        mentioned = mentioned_capabilities(text, self._visible_capabilities())
+        scope = self._search_scope(named, caller_family, mentioned)
         agents: list[dict[str, Any]] = []
-        for family in families:
+        families: list[str] = []
+        for family in scope:
             if family == "ledger":
                 agents.append(ledger_row())
-            else:
-                agents.extend(self.query(caller=caller, role=family)["agents"])
+                families.append(family)
+                continue
+            rows = [
+                row
+                for row in self.query(caller=caller, role=family)["agents"]
+                if row["agent_id"] != caller and capability_fits(_row_capabilities(row), mentioned)
+            ]
+            if not rows:
+                continue
+            families.append(family)
+            agents.extend(rows)
         log.info(
             "index.search",
             extra={"agent_id": caller, "msg_id": None, "need_id": None, "families": families},
         )
         return {"families": families, "agents": agents}
+
+    def _caller_family(self, caller: str) -> str | None:
+        try:
+            record = self.catalog.get(caller)
+        except CapError:
+            return None
+        return family_of(record.card)
+
+    def _visible_capabilities(self) -> list[str]:
+        found: list[str] = []
+        for agent in self.catalog.all_agents():
+            if agent.unverified or agent.visibility not in DEFAULT_QUERY:
+                continue
+            found.extend(card_capabilities(agent.card))
+        return found
+
+    def _search_scope(
+        self,
+        named: set[str],
+        caller_family: str | None,
+        mentioned: set[str],
+    ) -> list[str]:
+        if caller_family in COUNTERPARTS:
+            base = set(COUNTERPARTS[caller_family])
+        else:
+            base = set(FAMILIES)
+        if named:
+            scope = base & named
+        else:
+            scope = set(base)
+        if mentioned:
+            for agent in self.catalog.all_agents():
+                if agent.unverified or agent.visibility not in DEFAULT_QUERY:
+                    continue
+                family = family_of(agent.card)
+                if family in base and capability_fits(card_capabilities(agent.card), mentioned):
+                    scope.add(family)
+        if "ledger" in named:
+            scope.add("ledger")
+        return [family for family in (*FAMILIES, "ledger") if family in scope]
 
     def advance(self, delta: timedelta) -> None:
         if isinstance(self.clock, FixedClock):

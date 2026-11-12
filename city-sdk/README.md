@@ -38,7 +38,7 @@ async def main(need: Need, city: City) -> None:
     await city.say(random.choice(peers), f"A citizen asks: {message.text}")
 ```
 
-`city init agent <name>` scaffolds a project from the single agent template, which imports only `city_sdk.city`. You set the seat in `card.yaml` (`role` and `service_types`). See [`city-cli`](https://pypi.org/project/city-cli/) for `city init agent` / `city deploy`.
+`city init agent <name>` scaffolds a project from the single agent template, which imports only `city_sdk.city`. You set the seat in `card.yaml` (`role` and `capabilities`). See [`city-cli`](https://pypi.org/project/city-cli/) for `city init agent` / `city deploy`.
 
 ## Runtime vs kit
 

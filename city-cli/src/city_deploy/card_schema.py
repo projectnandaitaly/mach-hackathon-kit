@@ -102,14 +102,14 @@ def card_from_yaml(text: str, public: Mapping[str, Any] | None = None) -> dict[s
     name = raw.get("name") or "agent"
     version = raw.get("version")
     role = raw.get("role")
-    service_types = raw.get("service_types")
+    capabilities = raw.get("capabilities")
     no_clinical = raw.get("no_clinical_advice")
     if not isinstance(agent_id, str) or not isinstance(team, str) or not isinstance(version, str):
         raise CapError("SCHEMA_INVALID", "card")
     if not isinstance(role, str):
         raise CapError("SCHEMA_INVALID", "role")
-    if not isinstance(service_types, list) or not service_types:
-        raise CapError("SCHEMA_INVALID", "service_types")
+    if not isinstance(capabilities, list) or not capabilities:
+        raise CapError("SCHEMA_INVALID", "capabilities")
     if no_clinical is not True:
         raise CapError("SCHEMA_INVALID", "no_clinical_advice")
     if public is None:
@@ -136,7 +136,7 @@ def card_from_yaml(text: str, public: Mapping[str, Any] | None = None) -> dict[s
         "keys": [key],
         "endpoints": raw.get("endpoints") or {"mailbox": agent_id},
         "role": role,
-        "service_types": service_types,
+        "capabilities": capabilities,
         "no_clinical_advice": True,
     }
     for optional in ("districts", "languages", "accessibility"):

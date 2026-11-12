@@ -103,7 +103,7 @@ def agent_part(card: Mapping[str, Any]) -> str:
     """Role family of the local card: who is under test."""
     role = card.get("role")
     service = ""
-    raw = card.get("service_types")
+    raw = card.get("capabilities")
     if isinstance(raw, list):
         for item in raw:
             if isinstance(item, str) and item:

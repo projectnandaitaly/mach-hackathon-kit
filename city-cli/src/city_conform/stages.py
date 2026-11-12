@@ -106,9 +106,9 @@ async def card_declarations(agent: Agent) -> Verdict:
         return failed("no_clinical_advice")
     if card.get("role") not in {"booking_centre", "facility", "gp", "b2b"}:
         return failed("role")
-    services = card.get("service_types")
+    services = card.get("capabilities")
     if not isinstance(services, list) or not services:
-        return failed("service_types")
+        return failed("capabilities")
     return passed()
 
 

@@ -10,7 +10,7 @@
       "type": "object",
       "required": [
         "role",
-        "service_types",
+        "capabilities",
         "no_clinical_advice"
       ],
       "properties": {
@@ -22,7 +22,7 @@
             "b2b"
           ]
         },
-        "service_types": {
+        "capabilities": {
           "type": "array",
           "items": {
             "type": "string"

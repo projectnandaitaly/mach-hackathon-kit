@@ -8,7 +8,7 @@ Poi impostate la card (e lo stesso ruolo in `city.yaml`):
 
 ```yaml
 role: booking_centre
-service_types:
+capabilities:
   - booking_centre
 ```
 

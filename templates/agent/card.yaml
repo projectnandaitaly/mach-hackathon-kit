@@ -7,7 +7,7 @@ cap_versions:
 profiles:
   - mhm/1.0
 role: booking_centre
-service_types:
+capabilities:
   - booking_centre
 no_clinical_advice: true
 endpoints:

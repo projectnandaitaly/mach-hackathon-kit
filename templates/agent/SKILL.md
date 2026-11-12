@@ -1,8 +1,8 @@
 # Agent template
 
-One template for every seat. `city init agent <name>` copies it and writes your team and a new agent id. You set the seat yourself, in `card.yaml` (`role` and `service_types`) and the same `role` in `city.yaml`:
+One template for every seat. `city init agent <name>` copies it and writes your team and a new agent id. You set the seat yourself, in `card.yaml` (`role` and `capabilities`) and the same `role` in `city.yaml`:
 
-| Seat | `role` | `service_types` |
+| Seat | `role` | `capabilities` |
 |---|---|---|
 | Centro prenotazioni | `booking_centre` | `booking_centre` |
 | Medico di base | `gp` | `gp` |
@@ -32,9 +32,9 @@ The brain is a **care-protocol** agent: one inbound message, one protocol step. 
 |---|---|
 | `gp` | Protocol lookup → `prescribe …` to the Ledger, or `escalate.emergency` on a red flag → close with the citizen |
 | `booking_centre` | Verify `prescription` → ask constraints → `offer` slots from `world` → ask the facility to book → forward `booking.receipt` (**never** closes) |
-| `hospital` (`service_types: hospital.physiatry`) | Own slots → `hold` / `commit` → `checkin` → close after check-in |
-| `specialist_care` (`service_types: specialist_care.cardiology`) | Same as hospital, then `report` (and optional follow-up `prescribe`) → close after the report |
-| `family_counseling` (`service_types: family_counseling.gynecology`) | Direct access without a prescription; book and check-in; close at the last step |
+| `hospital` (`capabilities: hospital.physiatry`) | Own slots → `hold` / `commit` → `checkin` → close after check-in |
+| `specialist_care` (`capabilities: specialist_care.cardiology`) | Same as hospital, then `report` (and optional follow-up `prescribe`) → close after the report |
+| `family_counseling` (`capabilities: family_counseling.gynecology`) | Direct access without a prescription; book and check-in; close at the last step |
 
 Write the act word and its `key=value` tokens in the text you say. Citizens and the judge read those.
 

@@ -30,7 +30,7 @@ class AgentSummary(BaseModel):
     agent_id: constr(pattern=r"^agent:[a-z0-9_-]+(/[a-z0-9_-]+)?$")
     profiles: list[str]
     role: Family
-    service_types: list[str]
+    capabilities: list[str]
     no_clinical_advice: bool = Field(
         ..., description="The card's claim. false when the card does not make it."
     )

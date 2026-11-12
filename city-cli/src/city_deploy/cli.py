@@ -404,7 +404,7 @@ def init_agent(
         help="Parent directory. Creates <root>/<name>/ with the template.",
     ),
 ) -> None:
-    """Scaffold a local agent project. Set role and service_types in card.yaml before deploy."""
+    """Scaffold a local agent project. Set role and capabilities in card.yaml before deploy."""
     try:
         team_id = resolve_active_team(root=root)
         payload = init_project(root, name, team_id=team_id)
@@ -420,7 +420,7 @@ def init_agent(
     )
     if _state(ctx).get("json") is not True:
         say(
-            f"Next: set [mute]role[/mute] and [mute]service_types[/mute] in "
+            f"Next: set [mute]role[/mute] and [mute]capabilities[/mute] in "
             f"[mute]{name}/card.yaml[/mute] (they start empty) and the same role in "
             f"[mute]{name}/city.yaml[/mute], then "
             f"[mute]city card validate {name} && city deploy {name}[/mute]",

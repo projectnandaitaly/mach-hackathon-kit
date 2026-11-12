@@ -61,7 +61,7 @@ class HttpIndex:
                     str(row["agent_id"]),
                     role=role if isinstance(role, str) else "",
                     reputation=_number(row.get("reputation")),
-                    service_types=_strings(row.get("service_types")),
+                    capabilities=_strings(row.get("capabilities")),
                     no_clinical_advice=row.get("no_clinical_advice") is True,
                     profiles=_strings(row.get("profiles")),
                 )

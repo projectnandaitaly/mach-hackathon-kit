@@ -166,9 +166,13 @@ def _card_role(text: str) -> str:
         value = value.strip().strip("'\"")
         if key.strip() == "role":
             role = value
-        elif key.strip() == "service_types" and value.startswith("[") and value.endswith("]"):
+        elif (
+            key.strip() in {"capabilities", "service_types"}
+            and value.startswith("[")
+            and value.endswith("]")
+        ):
             types = [part.strip().strip("'\"") for part in value[1:-1].split(",") if part.strip()]
-        elif key.strip() == "service_types":
+        elif key.strip() in {"capabilities", "service_types"}:
             in_types = True
     if role in ROLES:
         return role
@@ -792,8 +796,10 @@ async def _partner_cancel(
     fields = fields_of(message.text)
     offer_id = fields.get("offer_id", "")
     citizen = _citizen(chat)
-    if offer_id and citizen and not _we(
-        chat, city.agent_id, f"offer_id={offer_id}", to=citizen, word="cancel"
+    if (
+        offer_id
+        and citizen
+        and not _we(chat, city.agent_id, f"offer_id={offer_id}", to=citizen, word="cancel")
     ):
         await _say(city, citizen, f"cancel offer_id={offer_id} reason=facility_cancelled")
     await _advance(city, message, chat, fixed=fixed, replacing=True)
@@ -910,9 +916,7 @@ async def _finish_booking(
 ) -> None:
     """Hold is in the mailbox. Read the held line and commit before this turn ends."""
 
-    found = await _await_line(
-        city, message.need_id, chat, "held", f"slot_id={slot}", op="hold"
-    )
+    found = await _await_line(city, message.need_id, chat, "held", f"slot_id={slot}", op="hold")
     if found is None:
         _LOG.info("care.held.missing", extra={"need_id": (message.need_id or "")[:48]})
         return
@@ -1002,17 +1006,17 @@ async def _on_refused(
     for row in chat:
         if f"slot_id={slot}" in row.text.split():
             offer_id = fields_of(row.text).get("offer_id", offer_id)
-    if target and offer_id and not _we(
-        chat, agent, f"offer_id={offer_id}", to=target, word="cancel"
+    if (
+        target
+        and offer_id
+        and not _we(chat, agent, f"offer_id={offer_id}", to=target, word="cancel")
     ):
         await _say(city, target, f"cancel offer_id={offer_id} reason=facility_cancelled")
     if hold_self:
         await _advance(city, message, chat, fixed="CONS-GIN", replacing=True)
 
 
-async def _on_checkin(
-    city: City, message: Message, chat: list[Message], *, reports: bool
-) -> None:
+async def _on_checkin(city: City, message: Message, chat: list[Message], *, reports: bool) -> None:
     booking_id = fields_of(message.text).get("booking_id", "")
     citizen = message.sender if message.sender.startswith("citizen:") else _citizen(chat)
     if not booking_id or not citizen:
@@ -1021,9 +1025,7 @@ async def _on_checkin(
     if not _we(chat, city.agent_id, token, to=LEDGER, word="checkin"):
         if not await _say(city, LEDGER, f"checkin booking_id={booking_id} citizen={citizen}"):
             return
-    found = await _await_line(
-        city, message.need_id, chat, "checked_in", token, op="checkin"
-    )
+    found = await _await_line(city, message.need_id, chat, "checked_in", token, op="checkin")
     if found is None:
         _LOG.info("care.checkin.missing", extra={"need_id": (message.need_id or "")[:48]})
         return

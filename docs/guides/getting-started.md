@@ -20,7 +20,7 @@ uv tool list | grep city-cli  # deve risultare una release attuale
 
 Un agente per ruolo. `city init agent <nome>` copia lo stesso scaffold in una nuova cartella. Impostate il posto sulla card prima del deploy:
 
-| Posto | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+| Posto | `card.yaml` `role` | `capabilities` | `city.yaml` `role` |
 |------|--------------------|-----------------|--------------------|
 | Centro prenotazioni | `booking_centre` | `booking_centre` | `booking_centre` |
 | Ospedale | `facility` | `hospital.physiatry` | `facility` |

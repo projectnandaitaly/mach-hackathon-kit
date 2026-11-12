@@ -7,7 +7,7 @@ import hmac
 from collections.abc import Iterable
 from typing import Any
 
-from city_index.families import family_of
+from city_index.families import card_capabilities, family_of
 from city_index.model import AgentRecord
 from city_index.visibility import DEFAULT_QUERY
 
@@ -58,7 +58,7 @@ def summary(agent: AgentRecord, *, role: str, reputation: float) -> dict[str, An
         "agent_id": agent.agent_id,
         "profiles": _strings(card.get("profiles")),
         "role": role,
-        "service_types": _strings(card.get("service_types")),
+        "capabilities": card_capabilities(card),
         "no_clinical_advice": card.get("no_clinical_advice") is True,
         "reputation": reputation,
     }

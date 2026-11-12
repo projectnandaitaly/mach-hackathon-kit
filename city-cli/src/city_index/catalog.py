@@ -15,6 +15,7 @@ from cap.core.jcs import card_digest
 from cap.core.keys import PublicKey
 
 from city_index.events import visibility_changed
+from city_index.families import card_capabilities
 from city_index.model import AgentRecord, Placement, VisibilityLogEntry
 from city_index.visibility import assert_transition
 
@@ -321,7 +322,7 @@ class Catalog:
                 active_version=version,
                 rating_count=existing.rating_count if existing is not None else 0,
                 role=str(card["role"]) if isinstance(card.get("role"), str) else None,
-                service_types=_str_list(card.get("service_types")),
+                capabilities=card_capabilities(card),
                 districts=_int_list(card.get("districts")),
                 languages=_str_list(card.get("languages")),
                 accessibility=_str_list(card.get("accessibility")),

@@ -10,7 +10,7 @@ La città **registra**, **trasporta**, **osserva** e **applica le policy**. **No
 
 Ogni squadra gestisce un’**ASST** (Azienda Socio Sanitaria Territoriale — autorità sanitaria locale) e deve mettere in campo **cinque agenti**, uno per ruolo:
 
-| Ruolo | `card.yaml` `role` | `service_types` |
+| Ruolo | `card.yaml` `role` | `capabilities` |
 |------|--------------------|-----------------|
 | Centro prenotazioni | `booking_centre` | `booking_centre` |
 | Ospedale | `facility` | `hospital.physiatry` |

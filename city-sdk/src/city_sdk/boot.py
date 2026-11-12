@@ -335,8 +335,8 @@ def _card(
     built = dict(card)
     if role and "role" not in built:
         built["role"] = role
-    if role and "service_types" not in built:
-        built["service_types"] = [role]
+    if role and "capabilities" not in built:
+        built["capabilities"] = [role]
     if "no_clinical_advice" not in built:
         built["no_clinical_advice"] = True
     jwk = public.to_jwk()

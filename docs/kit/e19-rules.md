@@ -37,7 +37,7 @@ Una **squadra** è un gruppo in gara. Ogni squadra gestisce un’**ASST** (Azien
 
 Ogni squadra gestisce un’**ASST**, un’autorità sanitaria locale, con cinque agenti:
 
-| Agente | Card `role` | `service_types` | Cosa fa |
+| Agente | Card `role` | `capabilities` | Cosa fa |
 |---|---|---|---|
 | Centro prenotazioni | `booking_centre` | `booking_centre` | Prende un cittadino con ricetta, trova slot dentro e fuori la propria ASST, presenta offerte, prenota, consegna la ricevuta |
 | Ospedale | `facility` | `hospital.physiatry` | Serve gli slot dei suoi medici, li tiene e li committa sul Ledger, registra i check-in |
@@ -131,11 +131,11 @@ Il grant porta esattamente i permessi di quel ruolo. Un grant di centro prenotaz
 
 ## Template
 
-`city init agent <nome>` copia l’unico template agente in una nuova cartella e vi scrive la vostra squadra e un nuovo id agente. Non sceglie il posto. Impostate `role` e `service_types` in `card.yaml`, e lo stesso `role` in `city.yaml`, prima del deploy. Un progetto ha:
+`city init agent <nome>` copia l’unico template agente in una nuova cartella e vi scrive la vostra squadra e un nuovo id agente. Non sceglie il posto. Impostate `role` e `capabilities` in `card.yaml`, e lo stesso `role` in `city.yaml`, prima del deploy. Un progetto ha:
 
 | File | Cos’è |
 |---|---|
-| `card.yaml` | La card agente: `agent_id`, `team`, `version`, `role`, `service_types`, `districts`, `no_clinical_advice` |
+| `card.yaml` | La card agente: `agent_id`, `team`, `version`, `role`, `capabilities`, `districts`, `no_clinical_advice` |
 | `city.yaml` | Impostazioni harness: ruolo e layer. Il brain è sempre `async def main` in `agent/agent.py`; non impostate `brain` |
 | `agent/agent.py` | Il brain: `async def main(need, city)` |
 | `SKILL.md` | Cosa fa il brain del template e le richieste che il Ledger capisce |
@@ -287,9 +287,9 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `service_types` restano vuoti. Impostateli prima del deploy:
+Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `capabilities` restano vuoti. Impostateli prima del deploy:
 
-| Cartella | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+| Cartella | `card.yaml` `role` | `capabilities` | `city.yaml` `role` |
 |---|---|---|---|
 | `booking_centre` | `booking_centre` | `booking_centre` | `booking_centre` |
 | `hospital` | `facility` | `hospital.physiatry` | `facility` |
@@ -321,7 +321,7 @@ async def main(need, city):
 
 **Parlate, poi agite.** Mettete la parola d’atto e i suoi token `chiave=valore` nello stesso testo di `city.say` della prosa. Guidate la logica dai token che rileggete con `understood(need.message)` (`symptom_code`, `prescription_number`, `offer_id`, …), non dalla fluidità.
 
-Una card dichiara un `role`: `booking_centre`, `facility` o `gp` per questo hackathon. `service_types` è come gli altri agenti vi trovano sull’Index. `no_clinical_advice` è `true`. Una card è un lavoro. La wave lega un id agente per famiglia di ruolo, e il Ledger controlla il grant a ogni scrittura.
+Una card dichiara un `role`: `booking_centre`, `facility` o `gp` per questo hackathon. `capabilities` è come gli altri agenti vi trovano sull’Index. `no_clinical_advice` è `true`. Una card è un lavoro. La wave lega un id agente per famiglia di ruolo, e il Ledger controlla il grant a ogni scrittura.
 
 I cittadini scelgono dai campi strutturati di un’offerta, controllati contro il registry. Non decidono dal free text. La rubrica valuta solo fatti di mondo e di Ledger. Chiedete al Ledger il mondo (`world`), il tempo di agenda (`agenda`) e le regole in vigore (`rules`). Applicate la tabella di protocollo. Non diagnosticate e non inventate una dose.
 
@@ -421,7 +421,7 @@ Non eseguite uno step di certify separato. `city deploy` costruisce l’immagine
 
 Lasciate il `Dockerfile` come lo ha scritto il template. Impostate `role` in `city.yaml` al ruolo della card e lasciate il resto di quel file. La suite allora controlla, senza il vostro codice, che:
 
-- `/card` e `/.well-known/agent-card.json` coincidano, il digest coincida con `/health`, e la card dichiari `no_clinical_advice: true`, un `role` noto e almeno una voce `service_types`
+- `/card` e `/.well-known/agent-card.json` coincidano, il digest coincida con `/health`, e la card dichiari `no_clinical_advice: true`, un `role` noto e almeno una voce `capabilities`
 - `/health` risponda `live` e `ready`
 - gli invoke non firmati, mal firmati e a chiave sconosciuta siano rifiutati e non eseguano il brain
 - lo stesso `msg_id` con lo stesso body sia una delivery; lo stesso `msg_id` con body diverso sia `IDEMPOTENCY_CONFLICT`
@@ -473,7 +473,7 @@ La CLI stampa lo stage fallito e il suo dettaglio. Il candidato non è promosso.
 | Vedete | Cosa fare |
 |---|---|
 | `chat.only` | Inviate con `city.say` così il body sul filo è testo |
-| `card.declarations` | `no_clinical_advice: true`, un `role` reale e i `service_types` giusti (hospital è `hospital.physiatry`) |
+| `card.declarations` | `no_clinical_advice: true`, un `role` reale e i `capabilities` giusti (hospital è `hospital.physiatry`) |
 | `card.*`, `health`, `invoke.signature`, `invoke.idempotency`, `alter`, `custody.*`, `probe.semantic` | Ripristinate il `Dockerfile` e `city.yaml` del template |
 | `invoke.semantics`, `emergency`, `scope` o `errors.signed` come `NOT TESTED` | Atteso; non è un fallimento di deploy |
 
@@ -748,11 +748,11 @@ Da zero a cinque agenti visible in città. Preferite il percorso breve in [Come 
 
 Aprite [projectnandaitaly.ai](https://projectnandaitaly.ai) e scegliete il login squadra (o andate dritti a [projectnandaitaly.ai/team](https://projectnandaitaly.ai/team)). Inserite l’email che City Hall ha registrato per voi. Ricevete un codice a quattro cifre via email; digitatelo. Atterrate sulla console di squadra. L’account esiste già: non vi viene inviato nulla finché non chiedete questo codice.
 
-La console si apre su **Assignment**: la vostra ASST, e una card per famiglia di ruolo con il template da cui partire, il `role` e i `service_types` della card, i permessi del ruolo, le procedure e i medici che serve, e quali dei vostri agenti sono rilasciati o confermati. Un ruolo senza agente dice «to deploy». Ogni ASST ha gli stessi ruoli, servizi e medici; la lingua scarsa, il distretto, il partner dell’anello e gli slot sono fissati quando Play apre il mondo, sotto **ASST world**.
+La console si apre su **Assignment**: la vostra ASST, e una card per famiglia di ruolo con il template da cui partire, il `role` e i `capabilities` della card, i permessi del ruolo, le procedure e i medici che serve, e quali dei vostri agenti sono rilasciati o confermati. Un ruolo senza agente dice «to deploy». Ogni ASST ha gli stessi ruoli, servizi e medici; la lingua scarsa, il distretto, il partner dell’anello e gli slot sono fissati quando Play apre il mondo, sotto **ASST world**.
 
 ### 2. Installare la CLI, creare gli agenti e fare deploy
 
-La catena completa di comandi — `city login`, `city init`, impostare `role` e `service_types` su ogni card (e lo stesso `role` in `city.yaml`), `city card validate` e `city deploy` nell’ordine specialist-first — è sotto [Come sviluppare un agente](#come-sviluppare-un-agente). Seguite quei passi finché ogni agente è `visible`.
+La catena completa di comandi — `city login`, `city init`, impostare `role` e `capabilities` su ogni card (e lo stesso `role` in `city.yaml`), `city card validate` e `city deploy` nell’ordine specialist-first — è sotto [Come sviluppare un agente](#come-sviluppare-un-agente). Seguite quei passi finché ogni agente è `visible`.
 
 Solo una persona per squadra deve fare deploy, ma ogni membro può accedere.
 

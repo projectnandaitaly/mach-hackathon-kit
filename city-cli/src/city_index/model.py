@@ -16,7 +16,7 @@ class AgentRecord:
     active_version: str
     rating_count: int = 0
     role: str | None = None
-    service_types: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     districts: list[int] = field(default_factory=list)
     languages: list[str] = field(default_factory=list)
     accessibility: list[str] = field(default_factory=list)

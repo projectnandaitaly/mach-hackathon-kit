@@ -59,7 +59,7 @@ def _local_catalogue(service: str) -> tuple[str, str, bool]:
     return ("VIS-CARD", "cardiology", True)
 
 
-# One template for every role (ADR-110). The team sets role and service_types on the card.
+# One template for every role (ADR-110). The team sets role and capabilities on the card.
 TEMPLATE = "agent"
 _LOCAL_PEER = Peer("agent:t05/osp-x", service="lab", district=8, role="hospital")
 _SLUG = "agent-uno"
@@ -90,7 +90,7 @@ def init_project(
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
     template placeholder in ``card.yaml`` / ``city.yaml``.     ``agent_id`` and
     ``endpoints.mailbox`` are both ``agent:<rid>``, a fresh 12-character id.
-    ``role`` and ``service_types`` are left empty. The team fills ``card.yaml``
+    ``role`` and ``capabilities`` are left empty. The team fills ``card.yaml``
     and the same ``role`` in ``city.yaml`` before deploy.
     Team credentials stay in the user config store
     (``~/.config/city/teams/<team>/``), not inside the project.
@@ -127,7 +127,7 @@ def init_project(
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
     write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
-    _blank_keys(dest / "card.yaml", {"role", "service_types"})
+    _blank_keys(dest / "card.yaml", {"role", "capabilities"})
     _blank_keys(dest / "city.yaml", {"role"})
     return {
         "template": TEMPLATE,
@@ -230,7 +230,7 @@ def _prepare_local_harness(root: Path) -> tuple[Harness, str | None]:
 
 
 def card_service(harness: Harness) -> str:
-    raw = harness.card.get("service_types")
+    raw = harness.card.get("capabilities")
     if isinstance(raw, list):
         for item in raw:
             if isinstance(item, str) and item:

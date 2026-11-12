@@ -1639,7 +1639,7 @@ class DeployService:
         family = family_of(deployment.card)
         if family is None:
             return
-        types = deployment.card.get("service_types")
+        types = deployment.card.get("capabilities")
         service_type = (
             types[0]
             if isinstance(types, list) and types and isinstance(types[0], str) and types[0]

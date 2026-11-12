@@ -54,7 +54,7 @@ def profile_card(
         "cap_versions": ["1.0"],
         "profiles": ["mhm/1.0"],
         "role": role,
-        "service_types": ["lab"],
+        "capabilities": ["lab"],
         "no_clinical_advice": True,
         "data_processing": [{"purpose": "care-coordination"}],
         "keys": [

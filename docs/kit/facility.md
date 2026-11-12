@@ -8,7 +8,7 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-| Cartella | `service_types` |
+| Cartella | `capabilities` |
 |--------|-----------------|
 | `hospital` | `hospital.physiatry` |
 | `specialist` | `specialist_care.cardiology` |

@@ -30,13 +30,13 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. `role` e `service_types` restano vuoti: il posto lo scrivete voi sulla card.
+Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. `role` e `capabilities` restano vuoti: il posto lo scrivete voi sulla card.
 
 ## 4. Impostare la card
 
 Modificate `card.yaml` in ogni cartella e impostate `role` in `city.yaml` allo stesso ruolo della card:
 
-| Cartella | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
+| Cartella | `card.yaml` `role` | `capabilities` | `city.yaml` `role` |
 |--------|--------------------|-----------------|--------------------|
 | `booking_centre` | `booking_centre` | `booking_centre` | `booking_centre` |
 | `hospital` | `facility` | `hospital.physiatry` | `facility` |
@@ -44,7 +44,7 @@ Modificate `card.yaml` in ogni cartella e impostate `role` in `city.yaml` allo s
 | `specialist` | `facility` | `specialist_care.cardiology` | `facility` |
 | `family_counseling` | `facility` | `family_counseling.gynecology` | `facility` |
 
-`city card validate <cartella>` controlla la card. Il brain legge `role` e `service_types` da quel file.
+`city card validate <cartella>` controlla la card. Il brain legge `role` e `capabilities` da quel file.
 
 ## 5. Rilasciare il brain del template
 

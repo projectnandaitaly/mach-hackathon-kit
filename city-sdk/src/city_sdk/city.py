@@ -212,7 +212,7 @@ class Peer:
     district: int | None = None
     role: str = ""
     reputation: int | float = 0
-    service_types: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
     no_clinical_advice: bool = False
     profiles: tuple[str, ...] = ()
 
@@ -275,8 +275,12 @@ class City:
         return self._address
 
     async def find(self, query: str) -> list[Peer]:
-        """Agents for a natural-language ``query``. The Index reads the families the text
-        names and returns their agents unordered; choosing one is the brain's job."""
+        """Agents for a natural-language ``query``.
+
+        The Index keeps a peer whose role this agent can use and, when the text
+        names a capability, whose card lists that capability. The list is
+        unordered; choosing one is the brain's job.
+        """
 
         if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY:
             raise CapError("SCHEMA_INVALID", "query")
