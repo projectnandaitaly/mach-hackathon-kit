@@ -46,6 +46,30 @@ class MemoryJournal:
             terminal=prior.terminal,
         )
 
+    def revise(self, msg_id: str, entry: JournalEntry) -> None:
+        """Replace a non-terminal entry. A finished outcome stays as it was."""
+
+        prior = self._rows.get(msg_id)
+        if prior is None:
+            self._rows[msg_id] = entry
+            return
+        if prior.digest != entry.digest:
+            raise CapError(
+                "IDEMPOTENCY_CONFLICT",
+                "msg_id reused with different content",
+                msg_id,
+            )
+        if prior.terminal:
+            return
+        self._rows[msg_id] = entry
+
+    def forget(self, msg_id: str) -> None:
+        """Drop a non-terminal accept so a retryable turn can run again."""
+
+        prior = self._rows.get(msg_id)
+        if prior is not None and not prior.terminal:
+            del self._rows[msg_id]
+
     def check(self, msg_id: str, digest: str) -> JournalEntry | None:
         prior = self._rows.get(msg_id)
         if prior is None:

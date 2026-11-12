@@ -122,7 +122,8 @@ class Harness:
         self.ack_delay = ack_delay
         self._pending_acks: dict[str, asyncio.Task[None] | None] = {}
         self._ack_tasks: set[asyncio.Task[None]] = set()
-        # msg_id -> newest fence while the brain runs; the journal is written only after it.
+        self._deferred: set[asyncio.Task[None]] = set()
+        # msg_id -> newest fence while the brain runs.
         self._running: dict[str, int] = {}
         self._running_digest: dict[str, str] = {}
         self.journal = MemoryJournal()
@@ -201,10 +202,14 @@ class Harness:
             open=open_count,
             category="lifecycle",
         )
+        # A brain still running must not ack processed after the handback.
+        for brain in list(self._deferred):
+            brain.cancel()
+        await asyncio.gather(*self._deferred, return_exceptions=True)
         # Acks still waiting are cancelled; acks already sending finish before the handback.
-        for task in self._pending_acks.values():
-            if task is not None:
-                task.cancel()
+        for pending in self._pending_acks.values():
+            if pending is not None:
+                pending.cancel()
         self._pending_acks.clear()
         await asyncio.gather(*self._ack_tasks, return_exceptions=True)
         for work in list(self.open):
@@ -316,6 +321,27 @@ class Harness:
         self.last_market = market
         self.brain_calls += 1
         started = time.perf_counter()
+        self._running[msg_id] = fence
+        self._running_digest[msg_id] = fingerprint
+        if self.defer:
+            # The relay abandons a push at 10s. Accept first; the brain runs after the 202.
+            body = {"status": "received"}
+            self._remember(msg_id, fingerprint, 202, body, fence, terminal=False)
+            self._open_work(msg_id, fence, need_id)
+            task = asyncio.get_running_loop().create_task(
+                self._deferred_turn(need, market, msg_id, fence, need_id, fingerprint, started)
+            )
+            self._deferred.add(task)
+            task.add_done_callback(self._deferred.discard)
+            self.log.info(
+                "deferred",
+                now=self.clock.now(),
+                agent_id=self.agent_id,
+                msg_id=msg_id,
+                fence=fence,
+                category="delivery",
+            )
+            return 202, body
         self.log.info(
             "brain begin",
             now=self.clock.now(),
@@ -326,8 +352,6 @@ class Harness:
             district=need.district,
             category="delivery",
         )
-        self._running[msg_id] = fence
-        self._running_digest[msg_id] = fingerprint
         timed_out = False
         try:
             try:
@@ -368,34 +392,6 @@ class Harness:
             duration_ms=elapsed_ms,
             category="delivery",
         )
-        if self.defer:
-            # Journal before renew so a lease blip still yields 409 on replay
-            # (invoke.idempotency). Return 202 even when renew fails.
-            body = {"status": "received"}
-            self._remember(msg_id, fingerprint, 202, body, fence, terminal=False)
-            work = self._open_work(msg_id, fence, need_id)
-            try:
-                await self.relay.renew(msg_id=msg_id, fence=fence)
-            except Exception:
-                self.log.error(
-                    "lease renew failed",
-                    now=self.clock.now(),
-                    agent_id=self.agent_id,
-                    msg_id=msg_id,
-                    fence=fence,
-                    category="error",
-                    exc_info=True,
-                )
-            self.log.info(
-                "deferred",
-                now=self.clock.now(),
-                agent_id=self.agent_id,
-                msg_id=msg_id,
-                fence=fence,
-                category="delivery",
-            )
-            self._schedule_ack(work)
-            return 202, body
         await self.relay.ack(msg_id=msg_id, fence=fence, status="processed")
         body = {"status": "processed"}
         self._remember(msg_id, fingerprint, 200, body, fence, terminal=True)
@@ -439,6 +435,97 @@ class Harness:
             return {"status": "rejected", "envelopes": [self._signed_ack(msg_id, "rejected")]}
         return None
 
+    async def _deferred_turn(
+        self,
+        need: Need,
+        market: City,
+        msg_id: str,
+        fence: int,
+        need_id: object,
+        fingerprint: str,
+        started: float,
+    ) -> None:
+        """Brain after the 202. A retryable timeout forgets the accept so the push can run again."""
+
+        self.log.info(
+            "brain begin",
+            now=self.clock.now(),
+            agent_id=self.agent_id,
+            msg_id=msg_id,
+            need_id=need_id,
+            service=need.service,
+            district=need.district,
+            category="delivery",
+        )
+        timed_out = False
+        rejected: dict[str, Any] | None = None
+        try:
+            try:
+                rejected = await self._think(need, market, msg_id)
+            except httpx.TimeoutException:
+                timed_out = True
+            except asyncio.CancelledError:
+                raise
+        finally:
+            latest = self._running.pop(msg_id, fence)
+            self._running_digest.pop(msg_id, None)
+        if timed_out:
+            self.journal.forget(msg_id)
+            self._drop_open(msg_id)
+            self.log.info(
+                "relay timed out",
+                now=self.clock.now(),
+                agent_id=self.agent_id,
+                msg_id=msg_id,
+                need_id=need_id,
+                fence=latest,
+                category="delivery",
+            )
+            await self._settle_ack(msg_id, latest, "retryable")
+            return
+        if rejected is not None:
+            self.journal.revise(
+                msg_id,
+                JournalEntry(
+                    digest=fingerprint,
+                    status_code=200,
+                    body=dict(rejected),
+                    fence=latest,
+                    terminal=True,
+                ),
+            )
+            self._drop_open(msg_id)
+            await self._settle_ack(msg_id, latest, "rejected")
+            return
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        self.log.info(
+            "brain done",
+            now=self.clock.now(),
+            agent_id=self.agent_id,
+            msg_id=msg_id,
+            need_id=need_id,
+            duration_ms=elapsed_ms,
+            category="delivery",
+        )
+        try:
+            await self.relay.renew(msg_id=msg_id, fence=latest)
+        except Exception:
+            self.log.error(
+                "lease renew failed",
+                now=self.clock.now(),
+                agent_id=self.agent_id,
+                msg_id=msg_id,
+                fence=latest,
+                category="error",
+                exc_info=True,
+            )
+        work = self._open_work(msg_id, latest, need_id)
+        self._schedule_ack(work)
+
+    def _drop_open(self, msg_id: str) -> None:
+        self.open = [item for item in self.open if item.msg_id != msg_id]
+        self._pending_acks.pop(msg_id, None)
+
     async def _hold_redelivery(self, msg_id: str, fence: int) -> tuple[int, dict[str, Any]]:
         """The relay timed out on a brain still running: keep the lease, never run it twice."""
         if fence > self._running[msg_id]:
@@ -480,7 +567,8 @@ class Harness:
             )
 
     async def flush_acks(self) -> None:
-        """Send every pending final ack now."""
+        """Wait for deferred brains, then send every pending final ack now."""
+        await asyncio.gather(*list(self._deferred), return_exceptions=True)
         pending = list(self._pending_acks.items())
         self._pending_acks.clear()
         for msg_id, task in pending:
