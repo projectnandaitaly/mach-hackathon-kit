@@ -261,12 +261,7 @@ class Harness:
         if not isinstance(envelope.get("sig"), dict):
             raise CapError("SIGNATURE_INVALID", "sig is required", msg_id)
         # ADR-098: Relay already checked freshness at accept; do not 410 on queue lag.
-        verify(
-            _without_grant(envelope),
-            now=self.clock.now(),
-            key_for_kid=await self._keys_for(envelope),
-            check_freshness=False,
-        )
+        await self._verify_invoke(envelope)
         if msg_id in self._running:
             if self._running_digest.get(msg_id) != fingerprint:
                 raise CapError(
@@ -736,22 +731,51 @@ class Harness:
         )
         return sign(unsigned, self._private, kid=self._kid)
 
-    async def _keys_for(self, envelope: Mapping[str, Any]) -> Callable[[str], PublicKey]:
+    async def _verify_invoke(self, envelope: Mapping[str, Any]) -> None:
+        """Verify the invoke. A stale cached citizen key is asked of the Index once more."""
+
+        try:
+            verify(
+                _without_grant(envelope),
+                now=self.clock.now(),
+                key_for_kid=await self._keys_for(envelope),
+                check_freshness=False,
+            )
+        except CapError as exc:
+            if exc.code != "SIGNATURE_INVALID" or not callable(
+                getattr(self.resolve_key, "fresh", None)
+            ):
+                raise
+            verify(
+                _without_grant(envelope),
+                now=self.clock.now(),
+                key_for_kid=await self._keys_for(envelope, fresh=True),
+                check_freshness=False,
+            )
+
+    async def _keys_for(
+        self, envelope: Mapping[str, Any], *, fresh: bool = False
+    ) -> Callable[[str], PublicKey]:
         """Deploy-time keys first; an unknown kid is asked of the Index for this delivery only."""
 
         sig = envelope.get("sig")
         kid = sig.get("kid") if isinstance(sig, Mapping) else None
         sender = envelope.get("from")
+        resolver = self.resolve_key
+        if fresh and resolver is not None:
+            again = getattr(resolver, "fresh", None)
+            if callable(again):
+                resolver = again
         if (
             not isinstance(kid, str)
             or not isinstance(sender, str)
             or not kid.startswith(sender + "#")
             or kid in self.keys
-            or self.resolve_key is None
+            or resolver is None
         ):
             return self._key_for_kid
         try:
-            found = await self.resolve_key(kid)
+            found = await resolver(kid)
         except CapError:
             # UPSTREAM_TIMEOUT (504) must propagate so the Relay retries; other Cap
             # codes from Index stay as raised.

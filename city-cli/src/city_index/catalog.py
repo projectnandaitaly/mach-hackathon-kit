@@ -239,6 +239,11 @@ class Catalog:
             grant = self._citizen_grants.get(citizen_id)
             return None if grant is None else dict(grant)
 
+    def forget_citizen(self, citizen_id: str) -> None:
+        """The memory catalog has no read cache; a re-issue is already visible."""
+
+        del citizen_id
+
     def put_placement(self, agent_id: str, invoke_base_url: str, revision_tag: str) -> Placement:
         if _AGENT.fullmatch(agent_id) is None:
             raise CapError("SCHEMA_INVALID", "agent_id")

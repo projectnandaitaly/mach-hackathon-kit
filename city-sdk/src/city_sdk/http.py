@@ -309,6 +309,17 @@ class HttpKeys:
 
         if kid.startswith(_CONFORM_STRANGER):
             return None
+        return await self._fetch(kid)
+
+    async def fresh(self, kid: str) -> PublicKey | None:
+        """Ask the Index again. The cached key can be one a takeover just replaced."""
+
+        self._cache.pop(kid, None)
+        if kid.startswith(_CONFORM_STRANGER):
+            return None
+        return await self._fetch(kid)
+
+    async def _fetch(self, kid: str) -> PublicKey | None:
         cached = self._cache.get(kid)
         if cached is not None and self._clock() < cached[0]:
             return cached[1]

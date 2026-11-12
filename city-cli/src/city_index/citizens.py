@@ -33,6 +33,13 @@ class CitizenKeys:
     def live(self, citizen_id: str) -> bool:
         return self._live_grant(citizen_id) is not None
 
+    def refresh(self, citizen_id: str) -> None:
+        """Drop a cached grant so the next read sees a key a new holder just published."""
+
+        forget = getattr(self._grants, "forget_citizen", None)
+        if callable(forget):
+            forget(citizen_id)
+
     def key(self, kid: str, permission: str) -> PublicKey:
         citizen_id, sep, wave = kid.partition("#")
         if not sep or not is_citizen(citizen_id):
