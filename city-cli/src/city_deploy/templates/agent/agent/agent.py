@@ -111,9 +111,25 @@ def _asks_address(message: Message) -> bool:
     return False
 
 
-async def handle(role: str, city: City, message: Message, chat: list[Message]) -> None:
+def _own_street(city: City) -> str:
+    """This agent's door: the city value, else the street shipped beside the brain."""
+
     street = getattr(city, "address", "")
-    if isinstance(street, str) and street and _asks_address(message):
+    if isinstance(street, str) and street.strip():
+        return street.strip()
+    env = os.environ.get("CITY_ADDRESS", "").strip()
+    if env:
+        return env
+    path = Path(__file__).with_name("door.txt")
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+async def handle(role: str, city: City, message: Message, chat: list[Message]) -> None:
+    street = _own_street(city)
+    if street and _asks_address(message):
         await city.say(message.sender, f"address={street}")
         return
     if role == "gp":
