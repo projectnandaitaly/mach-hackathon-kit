@@ -10,7 +10,7 @@ One template for every seat. `city init agent <name>` copies it and writes your 
 | Specialista | `facility` | `specialist_care.cardiology` |
 | Consultorio | `facility` | `family_counseling.gynecology` |
 
-The brain is a **care-protocol** agent: one inbound message, one protocol step. Case history is the state. Deployed with the card set, it is meant to carry levels 1–3; from level 4 you change `agent/agent.py` to earn more.
+The brain `city init` copies is a short `main`: it reads the free text and the sender, asks the Index, picks the first peer, asks that agent, and tells the citizen. The care-protocol brain (prescribe, offer, hold, commit, check-in, report) is the example in [`templates/examples/agent.py`](../examples/agent.py). Copy from there when you want that baseline. Levels 1–3 are what that example covers; from level 4 you change `agent/agent.py` further.
 
 ## SDK surface
 
@@ -20,7 +20,7 @@ The brain is a **care-protocol** agent: one inbound message, one protocol step. 
 | Know the sender | `city.inbound.sender` (`citizen:*`, `agent:*`, or `city:ledger`) |
 | Refuse clinical requests | `if clinical(text): raise OutOfScope()` (the card declares `no_clinical_advice`) |
 | Load the chat with that sender or case | `city.history(sender, need_id=...)`; `city.history(need_id=...)` for the whole case |
-| Find agents | `city.find("<natural language>")` returns `list[Peer]`, unordered |
+| Find agents | `city.find("<natural language>")` returns `list[Peer]`, unordered, without this agent |
 | Message a peer, the Ledger, or a citizen | `city.say(to, text)` |
 | Close the case with the citizen | `city.say(citizen, text, status="closed")` — judge scores from that message |
 

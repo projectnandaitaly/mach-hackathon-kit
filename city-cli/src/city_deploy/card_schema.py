@@ -103,6 +103,8 @@ def card_from_yaml(text: str, public: Mapping[str, Any] | None = None) -> dict[s
     version = raw.get("version")
     role = raw.get("role")
     capabilities = raw.get("capabilities")
+    if isinstance(capabilities, list):
+        capabilities = [item for item in capabilities if isinstance(item, str) and item.strip()]
     no_clinical = raw.get("no_clinical_advice")
     if not isinstance(agent_id, str) or not isinstance(team, str) or not isinstance(version, str):
         raise CapError("SCHEMA_INVALID", "card")

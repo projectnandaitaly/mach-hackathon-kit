@@ -131,7 +131,7 @@ Il grant porta esattamente i permessi di quel ruolo. Un grant di centro prenotaz
 
 ## Template
 
-`city init agent <nome>` copia l’unico template agente in una nuova cartella e vi scrive la vostra squadra e un nuovo id agente. Non sceglie il posto. Impostate `role` e `capabilities` in `card.yaml`, e lo stesso `role` in `city.yaml`, prima del deploy. Un progetto ha:
+`city init agent <nome>` copia l’unico template agente in una nuova cartella e vi scrive la vostra squadra e un nuovo id agente. Non sceglie il posto. `role` e `capabilities` sono commenti TODO: sostituiteli in `card.yaml`, e lo stesso `role` in `city.yaml`, prima del deploy. Un progetto ha:
 
 | File | Cos’è |
 |---|---|
@@ -141,7 +141,7 @@ Il grant porta esattamente i permessi di quel ruolo. Un grant di centro prenotaz
 | `SKILL.md` | Cosa fa il brain del template e le richieste che il Ledger capisce |
 | `Dockerfile` | Costruito dalla città dall’immagine base `city-sdk`; lasciatelo com’è |
 
-Il template è un **brain di care-protocol**. Per ogni ruolo legge il free text in ingresso, conosce il mittente, carica la storia del caso, parla con Ledger e peer tramite `city.say`, e chiude con il cittadino solo all’ultimo passo di quel ruolo (il centro prenotazioni non chiude mai). Lasciato invariato passa la conformance ed è pensato per i **livelli 1–3**. Dal **livello 4** in su cambiate `agent/agent.py` per guadagnare il resto; la rubrica valuta comunque gli esiti di cura.
+Il brain che `city init` copia sta tutto in `main`: legge il free text e il mittente (id, nome, ruolo, capabilities), chiede all’Index la lista di agenti, ne sceglie uno, gli chiede qualcosa e risponde al cittadino. Il care protocol completo (prescribe, offer, hold, commit, check-in, report) è l’esempio in `templates/examples/agent.py`. Quella baseline è pensata per i **livelli 1–3**. Dal **livello 4** in su cambiate `agent/agent.py` per guadagnare il resto; la rubrica valuta comunque gli esiti di cura.
 
 Il brain vede il messaggio in ingresso come `need.message` (anche `city.inbound`): `type`, `sender`, `msg_id`, `need_id`, `conversation_id`, `body`, `text` e `status`. Sul bordo squadra il `type` in ingresso è `chat`; chiamate `understood(need.message)` (da `city_sdk.city`) se volete il nome dell’atto e i campi `chiave=valore` riparsati. Le risposte restano nella conversation del journey.
 
@@ -149,7 +149,7 @@ Il brain vede il messaggio in ingresso come `need.message` (anche `city.inbound`
 
 | Verbo | Cosa fa |
 |---|---|
-| `await city.find(query)` | Ricerca Index in linguaggio naturale (1..500 caratteri). Restituisce `list[Peer]` senza ordine significativo; la città non ordina mai |
+| `await city.find(query)` | Ricerca Index in linguaggio naturale (1..500 caratteri). Restituisce `list[Peer]` senza ordine significativo e senza l’agente chiamante; la città non ordina mai |
 | `await city.say(to, text, *, status=None)` | Invia `text` (1..2000 caratteri) attraverso la mailbox del Relay a un agente, al Ledger (`LEDGER`, cioè `city:ledger`) o a un cittadino. Solo un messaggio a un cittadino porta `status`: `"wip"` (il default) o `"closed"`. Uno `status` verso un agente o il Ledger solleva `SCHEMA_INVALID` e non invia nulla. Restituisce il `msg_id` |
 | `await city.history(peer=None, *, need_id=None)` | La vostra mailbox, dal più vecchio: ciò che avete inviato e ricevuto, filtrato per parte e/o caso |
 
@@ -287,7 +287,7 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `capabilities` restano vuoti. Impostateli prima del deploy:
+Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `capabilities` restano commenti `TODO`. Sostituiteli prima del deploy:
 
 | Cartella | `card.yaml` `role` | `capabilities` | `city.yaml` `role` |
 |---|---|---|---|
@@ -299,7 +299,7 @@ Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `c
 
 ### 4. Brain (opzionale al primo deploy)
 
-Rilasciate il brain del template una volta impostata la card. Esegue già il care protocol per ogni ruolo (prescribe / escalate, offer e book, hold / commit / check-in / report) e passa la conformance. Quella baseline è pensata per i livelli 1–3. Dal livello 4 in su cambiate il comportamento solo in `<agente>/agent/agent.py`. Lasciate il Dockerfile com’è.
+Il brain copiato da `city init` è l’esempio corto in `agent/agent.py`. Il care protocol (prescribe / escalate, offer e book, hold / commit / check-in / report) è in `templates/examples/agent.py`: copiatelo nel brain della cartella se volete quella baseline per i livelli 1–3. Dal livello 4 in su cambiate il comportamento solo in `<agente>/agent/agent.py`. Lasciate il Dockerfile com’è.
 
 | Agente | File del brain |
 |---|---|

@@ -278,13 +278,17 @@ class City:
         """Agents for a natural-language ``query``.
 
         The Index keeps a peer whose role this agent can use and, when the text
-        names a capability, whose card lists that capability. The list is
-        unordered; choosing one is the brain's job.
+        names a capability, whose card lists that capability. This agent is left
+        out of the list. The list is unordered; choosing one is the brain's job.
         """
 
         if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY:
             raise CapError("SCHEMA_INVALID", "query")
-        return await self._index.search(query)
+        found = await self._index.search(query)
+        me = self._agent_id
+        if not me:
+            return found
+        return [peer for peer in found if peer.agent_id != me]
 
     async def say(self, to: Peer | str, text: str, *, status: str | None = None) -> str:
         """Send one free-text message to an agent, a citizen, or ``LEDGER``.

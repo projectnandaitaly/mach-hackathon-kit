@@ -90,8 +90,8 @@ def init_project(
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
     template placeholder in ``card.yaml`` / ``city.yaml``.     ``agent_id`` and
     ``endpoints.mailbox`` are both ``agent:<rid>``, a fresh 12-character id.
-    ``role`` and ``capabilities`` are left empty. The team fills ``card.yaml``
-    and the same ``role`` in ``city.yaml`` before deploy.
+    ``role`` and ``capabilities`` are TODO comments. The team replaces them
+    in ``card.yaml`` and sets the same ``role`` in ``city.yaml`` before deploy.
     Team credentials stay in the user config store
     (``~/.config/city/teams/<team>/``), not inside the project.
     """
@@ -127,7 +127,7 @@ def init_project(
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
     write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
-    _blank_keys(dest / "card.yaml", {"role", "capabilities"})
+    _placeholder_seat(dest / "card.yaml")
     _blank_keys(dest / "city.yaml", {"role"})
     return {
         "template": TEMPLATE,
@@ -168,6 +168,34 @@ def _set_yaml_field(path: Path, key: str, value: str) -> None:
             out.append(line)
     if not found:
         out.insert(0, f"{prefix} {value}")
+    path.write_text(
+        "\n".join(out) + ("\n" if text.endswith("\n") or not text else ""), encoding="utf-8"
+    )
+
+
+def _placeholder_seat(path: Path) -> None:
+    """Leave ``role`` and ``capabilities`` as TODO comments for the team to fill."""
+
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    out: list[str] = []
+    skip = False
+    for line in lines:
+        if skip:
+            if line.startswith((" ", "\t")):
+                continue
+            skip = False
+        key = line.split(":", 1)[0]
+        if key == "role" and not line.startswith((" ", "\t")):
+            out.append("role: # TODO: assign a role to the agent")
+            continue
+        if key == "capabilities" and not line.startswith((" ", "\t")):
+            out.append("capabilities:")
+            out.append("  - # TODO: assign capabilities to the agent")
+            out.append("  - # TODO: assign capabilities to the agent")
+            skip = True
+            continue
+        out.append(line)
     path.write_text(
         "\n".join(out) + ("\n" if text.endswith("\n") or not text else ""), encoding="utf-8"
     )

@@ -30,7 +30,7 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. `role` e `capabilities` restano vuoti: il posto lo scrivete voi sulla card.
+Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. `role` e `capabilities` restano commenti `TODO`: il posto lo scrivete voi sulla card.
 
 ## 4. Impostare la card
 
@@ -46,16 +46,11 @@ Modificate `card.yaml` in ogni cartella e impostate `role` in `city.yaml` allo s
 
 `city card validate <cartella>` controlla la card. Il brain legge `role` e `capabilities` da quel file.
 
-## 5. Rilasciare il brain del template
+## 5. Il brain di partenza
 
-Il template è un **brain di care-protocol**, non un hello-world. Lasciato invariato:
+`agent/agent.py` è un `main` corto: legge il free text e il mittente (id, nome, ruolo, capabilities), chiede all’Index la lista di agenti, ne sceglie uno, gli chiede qualcosa e risponde al cittadino. I commenti `#` nel file dicono che fa ogni riga.
 
-- rifiuta il free text clinico (`OutOfScope`)
-- per `gp`: cerca la riga di protocollo, fa `prescribe` o `escalate.emergency`, poi chiude
-- per `booking_centre`: verifica la ricetta, offre slot, prenota tramite la facility, inoltra la ricevuta (**non** chiude — la visita è ancora davanti)
-- per `hospital` / `specialist_care` / `family_counseling`: hold → commit → check-in (e referto per lo specialista), poi chiude all’ultimo passo
-
-Rilasciate tutti e cinque prima di riscrivere la strategia. Quella baseline è pensata per i **livelli 1–3**. Dal **livello 4** in su modificate il brain per guadagnare il resto. Cosa chiede ogni livello: [Gli otto livelli, come accadono](../kit/levels.md).
+Il care protocol (prescribe, offer, hold, commit, check-in, report) è l’esempio in [`templates/examples/agent.py`](../../templates/examples/agent.py). Copiatelo nel brain quando volete quella baseline, pensata per i **livelli 1–3**. Dal **livello 4** in su modificate ancora. Cosa chiede ogni livello: [Gli otto livelli, come accadono](../kit/levels.md).
 
 Dopo aver impostato la card, cambiate solo `<agente>/agent/agent.py`. Lasciate il Dockerfile com’è. Raggiungete la città solo tramite `city_sdk.city` (stdlib come `json` e `re` vanno bene).
 
