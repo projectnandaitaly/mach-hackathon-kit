@@ -39,12 +39,21 @@ from city_deploy.chat_play import (
     SESSION_COMMANDS,
     PlayMove,
     agent_part,
-    explain_turn,
     interpret,
+    layout_rows,
     line_hint,
     moves_for,
+    turn_rows,
 )
-from city_deploy.style import console, echo_input_color, report, say, transcript
+from city_deploy.style import (
+    chat_width,
+    console,
+    echo_input_color,
+    report,
+    say,
+    transcript,
+    transcript_lines,
+)
 
 _DEFAULT_PROCEDURE = "visita-cardiologica"
 _LOCAL_RX_PREFIX = "rx-local-"
@@ -692,12 +701,13 @@ def _print_chat_actions(
     console.print()
     status = str(result.get("status", "unknown"))
     actions = result.get("actions")
-    rows = actions if isinstance(actions, list) else []
-    chunks: list[str] = [status]
-    if not rows:
-        chunks.append("(no actions)")
-    chunks.extend(explain_turn(rows, posts, target=target))
-    transcript("out", "\n".join(chunks))
+    acted = actions if isinstance(actions, list) else []
+    lines: list[str] = [status]
+    if not acted:
+        lines.append("(no actions)")
+    lines.append("")
+    lines.extend(layout_rows(turn_rows(acted, posts, target=target), width=chat_width()))
+    transcript_lines("out", lines)
     console.print()
 
 
@@ -719,9 +729,9 @@ async def _chat_local_async(
 ) -> None:
     project = root.resolve()
     harness, _team = _prepare_local_harness(project)
+    target = agent_part(harness.card)
     seed_chat_world(harness)
     service = card_service(harness)
-    target = agent_part(harness.card)
     stamp = brain_stamp(project)
     await harness.start()
     report(

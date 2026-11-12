@@ -58,7 +58,12 @@ _MARK: dict[Kind, str] = {
 console = Console(theme=_THEME, highlight=False, soft_wrap=True)
 
 
-def _fold(text: str, width: int) -> list[str]:
+def chat_width() -> int:
+    """Columns for chat text after the four-column gutter. One column stays free."""
+    return max(24, console.width - 5)
+
+
+def fold(text: str, width: int) -> list[str]:
     """Wrap on spaces. A token longer than ``width`` breaks so a path cannot run off."""
     rows: list[str] = []
     for raw in text.splitlines() or [""]:
@@ -90,15 +95,22 @@ def transcript(kind: Stream, message: str, *, style: str | None = None) -> None:
     """
     if not message:
         return
+    transcript_lines(kind, fold(message, chat_width()), style=style)
+
+
+def transcript_lines(kind: Stream, lines: Sequence[str], *, style: str | None = None) -> None:
+    """Several chat rows under one gutter label. Only the first row carries the label.
+
+    Blank rows stay blank, so a block can be split into readable groups.
+    """
+    if not lines:
+        return
     paint = style or kind
     label = _STREAM_LABEL[kind]
-    # Leave one column free so a full line does not wrap and leave a blank row.
-    width = max(24, console.width - 5)
-    lines = _fold(message, width)
     gutter = " " * 4
     for index, line in enumerate(lines):
         prefix = f"{label:<3} " if index == 0 else gutter
-        console.print(Text(prefix + line, style=paint), soft_wrap=False)
+        console.print(Text((prefix + line).rstrip(), style=paint), soft_wrap=False)
     _bump_line()
 
 

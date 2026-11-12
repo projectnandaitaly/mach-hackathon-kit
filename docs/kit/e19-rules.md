@@ -333,7 +333,7 @@ Dalla cartella padre degli agenti, nominate la cartella. Questo carica il brain 
 city run family_counseling
 ```
 
-La card della cartella è il brain che gira: `city run gp` è il medico di base, `city run hospital` è l’ospedale. Modificate `agent/agent.py` a chat aperta. La riga successiva ricarica il brain quando quelle sorgenti cambiano.
+La card della cartella è il brain che gira: `city run gp` è il medico di base, `city run hospital` è l’ospedale. `role` in `card.yaml` deve essere `gp`, `booking_centre` o `facility` prima di `city run`; un ruolo vuoto o ancora il TODO di `city init` ferma il comando. Per `facility` serve anche una capability `hospital…`, `specialist_care…` o `family_counseling…`. Modificate `agent/agent.py` a chat aperta. La riga successiva ricarica il brain quando quelle sorgenti cambiano.
 
 La chat chiede chi siete. Digitate un numero, un nome o `/as <nome>`. `\changeCharacter` torna a quell’elenco. `\quitChat` o `/quit` esce.
 

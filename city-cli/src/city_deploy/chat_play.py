@@ -7,12 +7,14 @@ The brain's answer stays structured; this module only explains it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from cap.core.errors import CapError
 from city_sdk.city import LEDGER
+
+from city_deploy.style import fold
 
 CHARACTERS: tuple[tuple[str, str], ...] = (
     ("citizen", "A citizen. A sentence is a need."),
@@ -99,25 +101,39 @@ class ChatTurn:
     message: str = ""
 
 
+_CARD_ROLES = frozenset({"gp", "booking_centre", "facility"})
+
+
 def agent_part(card: Mapping[str, Any]) -> str:
-    """Role family of the local card: who is under test."""
+    """Role family of the local card: who is under test.
+
+    ``city run`` refuses a card whose ``role`` is missing or still the init TODO.
+    A facility is hospital, specialist, or family counseling only when a capability says so.
+    """
     role = card.get("role")
+    if role not in _CARD_ROLES:
+        raise CapError("SCHEMA_INVALID", "set role in card.yaml before city run")
     service = ""
     raw = card.get("capabilities")
     if isinstance(raw, list):
         for item in raw:
-            if isinstance(item, str) and item:
+            if isinstance(item, str) and item and not item.lstrip().startswith("#"):
                 service = item
                 break
-    if role == "gp" or service == "gp":
+    if role == "gp":
         return "gp"
-    if role == "booking_centre" or service == "booking_centre":
+    if role == "booking_centre":
         return "booking_centre"
     if service.startswith("family_counseling"):
         return "family_counseling"
     if service.startswith("specialist_care"):
         return "specialist"
-    return "hospital"
+    if service == "hospital" or service.startswith("hospital."):
+        return "hospital"
+    raise CapError(
+        "SCHEMA_INVALID",
+        "set a hospital, specialist_care, or family_counseling capability before city run",
+    )
 
 
 def resolve_actor(text: str) -> str | None:
@@ -382,16 +398,23 @@ def interpret(
     return ChatTurn("send", payload=payload)
 
 
-def explain_turn(
+SayRow = tuple[str, str, str]
+"""A message the brain sent: sender, receiver, and the text with any status mark."""
+ChatRow = str | SayRow
+# Narrowest text column that still hangs beside a sender > receiver header.
+_MIN_TEXT_COLUMN = 30
+
+
+def turn_rows(
     actions: list[object],
     posts: list[dict[str, object]],
     *,
     target: str,
-) -> list[str]:
-    """One plain sentence per structured action. Empty when the brain did nothing."""
+) -> list[ChatRow]:
+    """One row per structured action. A say stays structured so it can be laid out."""
     if not actions:
         return [_SILENCE.get(target, "No market action.")]
-    lines: list[str] = []
+    rows: list[ChatRow] = []
     post_at = 0
     for action in actions:
         if not isinstance(action, dict):
@@ -399,10 +422,56 @@ def explain_turn(
         if action.get("kind") == "post" and post_at < len(posts):
             body = posts[post_at].get("body")
             post_at += 1
-            lines.append(_explain_post(action, body if isinstance(body, dict) else {}))
+            rows.append(_explain_post(action, body if isinstance(body, dict) else {}))
+        elif action.get("kind") == "say":
+            rows.append(_say_row(action))
         else:
-            lines.append(_explain_action(action))
+            rows.append(_explain_action(action))
+    return rows
+
+
+def explain_turn(
+    actions: list[object],
+    posts: list[dict[str, object]],
+    *,
+    target: str,
+) -> list[str]:
+    """One plain sentence per structured action. Empty when the brain did nothing."""
+    return [_flat(row) for row in turn_rows(actions, posts, target=target)]
+
+
+def layout_rows(rows: Sequence[ChatRow], *, width: int) -> list[str]:
+    """Lines for the out block, wrapped to ``width``.
+
+    A message keeps ``sender > receiver :`` on its first line. The text hangs under its
+    own column, so the arrows and colons line up down the block. A blank line separates
+    messages.
+    """
+    lines: list[str] = []
+    for index, row in enumerate(rows):
+        if index:
+            lines.append("")
+        if isinstance(row, str):
+            lines.extend(fold(row, width))
+            continue
+        sender, receiver, text = row
+        head = f"{sender} > {receiver} : "
+        if width - len(head) < _MIN_TEXT_COLUMN:
+            # Too little room beside the header: it stands alone and the text follows, indented.
+            lines.append(f"{sender} > {receiver} :")
+            lines.extend("    " + part for part in fold(text, width - 4))
+            continue
+        parts = fold(text, width - len(head))
+        lines.append(head + parts[0])
+        lines.extend(" " * len(head) + part for part in parts[1:])
     return lines
+
+
+def _flat(row: ChatRow) -> str:
+    if isinstance(row, str):
+        return row
+    sender, receiver, text = row
+    return f"{sender} > {receiver} : {text}"
 
 
 def _session_turn(text: str) -> ChatTurn | None:
@@ -518,8 +587,6 @@ def _explain_action(action: Mapping[str, object]) -> str:
         return f"Check-in on the local ledger ({action.get('detail', '')})."
     if kind == "report":
         return "Report filed for this booking."
-    if kind == "say":
-        return _said(action)
     if kind == "ledger":
         text = action.get("text", "")
         spoken = text.strip() if isinstance(text, str) else ""
@@ -527,8 +594,8 @@ def _explain_action(action: Mapping[str, object]) -> str:
     return f"{kind}: a market action."
 
 
-def _said(action: Mapping[str, object]) -> str:
-    """The words the brain sent, and who they were for."""
+def _say_row(action: Mapping[str, object]) -> SayRow:
+    """The words the brain sent, and who they went to."""
     raw_from = action.get("from", "")
     sender = raw_from.strip() if isinstance(raw_from, str) and raw_from.strip() else "agent"
     peer = action.get("to", "")
@@ -537,7 +604,7 @@ def _said(action: Mapping[str, object]) -> str:
     spoken = text.strip() if isinstance(text, str) else ""
     status = action.get("status", "")
     mark = f" ({status})" if isinstance(status, str) and status else ""
-    return f"{sender} > {receiver} : {spoken or '(no text)'}{mark}"
+    return (sender, receiver, f"{spoken or '(no text)'}{mark}")
 
 
 def _explain_post(action: Mapping[str, object], body: Mapping[str, object]) -> str:
