@@ -30,7 +30,7 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. **Non** sceglie il posto. La card copiata è solo un file di partenza.
+Ogni comando copia l’unico template sotto [`templates/agent/`](../../templates/agent/). Scrive la vostra squadra e un nuovo id agente. `role` e `service_types` restano vuoti: il posto lo scrivete voi sulla card.
 
 ## 4. Impostare la card
 

@@ -287,7 +287,7 @@ city init agent specialist
 city init agent family_counseling
 ```
 
-Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `service_types` sono ancora i valori di partenza del template. Impostateli prima del deploy:
+Ogni comando copia lo stesso template agente in una cartella con `card.yaml`, `city.yaml`, `agent/agent.py`, `SKILL.md` e un `Dockerfile`. Il `team` della card è `team:<vostra squadra>`. `agent_id` e `endpoints.mailbox` sono entrambi `agent:` più un nuovo id di 12 caratteri. `name` è il nome della cartella. `role` e `service_types` restano vuoti. Impostateli prima del deploy:
 
 | Cartella | `card.yaml` `role` | `service_types` | `city.yaml` `role` |
 |---|---|---|---|

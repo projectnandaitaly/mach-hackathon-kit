@@ -420,8 +420,9 @@ def init_agent(
     )
     if _state(ctx).get("json") is not True:
         say(
-            f"Next: edit [mute]{name}/card.yaml[/mute] (role, service_types) and "
-            f"[mute]{name}/city.yaml[/mute] role, then "
+            f"Next: set [mute]role[/mute] and [mute]service_types[/mute] in "
+            f"[mute]{name}/card.yaml[/mute] (they start empty) and the same role in "
+            f"[mute]{name}/city.yaml[/mute], then "
             f"[mute]city card validate {name} && city deploy {name}[/mute]",
             kind="info",
         )

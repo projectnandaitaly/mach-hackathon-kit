@@ -88,10 +88,10 @@ def init_project(
 
     ``--root`` is the parent directory. The agent project always lands in a
     new folder named ``name``. ``team_id`` (from ``city login``) replaces the
-    template placeholder in ``card.yaml`` / ``city.yaml``. ``agent_id`` and
+    template placeholder in ``card.yaml`` / ``city.yaml``.     ``agent_id`` and
     ``endpoints.mailbox`` are both ``agent:<rid>``, a fresh 12-character id.
-    Role and ``service_types`` stay as the template wrote them: the team edits
-    ``card.yaml`` (and the same ``role`` in ``city.yaml``) before deploy.
+    ``role`` and ``service_types`` are left empty. The team fills ``card.yaml``
+    and the same ``role`` in ``city.yaml`` before deploy.
     Team credentials stay in the user config store
     (``~/.config/city/teams/<team>/``), not inside the project.
     """
@@ -127,6 +127,8 @@ def init_project(
     # ADR-070: the hall Agents island shows card.name; keep it equal to the agent slug.
     _set_yaml_field(dest / "card.yaml", "name", name)
     write_card_id(dest / "card.yaml", f"agent:{(rid or new_rid)()}")
+    _blank_keys(dest / "card.yaml", {"role", "service_types"})
+    _blank_keys(dest / "city.yaml", {"role"})
     return {
         "template": TEMPLATE,
         "name": name,
@@ -166,6 +168,29 @@ def _set_yaml_field(path: Path, key: str, value: str) -> None:
             out.append(line)
     if not found:
         out.insert(0, f"{prefix} {value}")
+    path.write_text(
+        "\n".join(out) + ("\n" if text.endswith("\n") or not text else ""), encoding="utf-8"
+    )
+
+
+def _blank_keys(path: Path, keys: set[str]) -> None:
+    """Clear top-level YAML keys, including any indented list under them."""
+
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    out: list[str] = []
+    skip = False
+    for line in lines:
+        if skip:
+            if line.startswith((" ", "\t")):
+                continue
+            skip = False
+        key = line.split(":", 1)[0]
+        if key in keys and not line.startswith((" ", "\t")):
+            out.append(f"{key}:")
+            skip = True
+            continue
+        out.append(line)
     path.write_text(
         "\n".join(out) + ("\n" if text.endswith("\n") or not text else ""), encoding="utf-8"
     )
