@@ -368,7 +368,7 @@ Dopo aver scelto un mittente, funzionano tre tipi di input:
 | `/moves` | Ristampa le righe |
 | `\quitChat` | Esce dalla chat e torna alla shell |
 
-`I have an /emergency` è una frase, non il comando emergency. La chat stampa ogni messaggio che il brain dice: al cittadino con il suo `status`, ad altri agenti e al Ledger.
+`I have an /emergency` è una frase, non il comando emergency. La chat stampa ogni messaggio che il brain dice: al cittadino con il suo `status`, ad altri agenti e al Ledger. I `say` verso cittadino o agente appaiono come `sender > receiver : text` (con `(status)` in coda quando c’è).
 
 `city run` non certifica l’agente. Una wave richiede ancora `city deploy`. `city conform` senza `--url` esegue un agente di riferimento built-in, non la cartella che state modificando.
 

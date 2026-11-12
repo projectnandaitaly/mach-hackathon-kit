@@ -191,6 +191,7 @@ def local_actions(
         status = body.get("status") if isinstance(body, dict) else None
         action = {
             "kind": "say",
+            "from": relay.agent_id or "agent",
             "to": str(row.get("to", "")),
             "text": text if isinstance(text, str) else "",
         }

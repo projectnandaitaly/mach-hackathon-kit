@@ -529,13 +529,15 @@ def _explain_action(action: Mapping[str, object]) -> str:
 
 def _said(action: Mapping[str, object]) -> str:
     """The words the brain sent, and who they were for."""
+    raw_from = action.get("from", "")
+    sender = raw_from.strip() if isinstance(raw_from, str) and raw_from.strip() else "agent"
     peer = action.get("to", "")
-    who = peer.strip() if isinstance(peer, str) and peer.strip() else "the room"
+    receiver = peer.strip() if isinstance(peer, str) and peer.strip() else "the room"
     text = action.get("text", "")
     spoken = text.strip() if isinstance(text, str) else ""
     status = action.get("status", "")
     mark = f" ({status})" if isinstance(status, str) and status else ""
-    return f"To {who}{mark}: {spoken or '(no text)'}"
+    return f"{sender} > {receiver} : {spoken or '(no text)'}{mark}"
 
 
 def _explain_post(action: Mapping[str, object], body: Mapping[str, object]) -> str:
