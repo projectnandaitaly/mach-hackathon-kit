@@ -19,12 +19,12 @@ The brain `city init` copies is a short `main`: it reads the free text and the s
 | Read the free text | `city.inbound.text` |
 | Know the sender | `city.inbound.sender` (`citizen:*`, `agent:*`, or `city:ledger`) |
 | Refuse clinical requests | `if clinical(text): raise OutOfScope()` (the card declares `no_clinical_advice`) |
-| Load the chat with that sender or case | `city.history(sender, need_id=...)`; `city.history(need_id=...)` for the whole case |
+| Load this case, then every actor in it | `city.history(need_id=message.need_id)`; each row's `sender` and `recipient` |
 | Find agents | `city.find("<natural language>")` returns `list[Peer]`, unordered, without this agent |
 | Message a peer, the Ledger, or a citizen | `city.say(to, text)` |
 | Close the case with the citizen | `city.say(citizen, text, status="closed")` — judge scores from that message |
 
-`city.llm(messages)` calls the team's model through the City LLM Gateway. The city never ranks Index results; if you pick among peers, that choice is yours.
+The starting `main` calls `city.llm(messages, need_id=...)`. `messages` is the OpenAI list of `{"role", "content"}`. The reply text is `content`. A missing team key raises `KEY_UNKNOWN`. The city never ranks Index results; if you pick among peers, that choice is yours.
 
 ## What each role does
 

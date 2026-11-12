@@ -1,12 +1,13 @@
 """Starting brain. One turn, everything in ``main``.
 
-Read the free text and who sent it, ask the Index for agents, pick one, ask that
-agent, and answer the citizen. The Index list is unordered; this brain picks.
+Read the free text and who sent it, load this case and its actors, ask the
+City LLM Gateway, ask the Index for agents, pick one, ask that agent, and
+answer the citizen. The Index list is unordered; this brain picks.
 """
 
 from __future__ import annotations
 
-from city_sdk.city import LEDGER, City, Need
+from city_sdk.city import LEDGER, CapError, City, Need
 
 
 async def main(need: Need, city: City) -> None:
@@ -24,6 +25,43 @@ async def main(need: Need, city: City) -> None:
     sender_id = message.sender
     # The Index does not return a display name. The name is the last piece of the id.
     sender_name = sender_id.split(":", 1)[-1].rsplit("/", 1)[-1]
+
+    # This case only, oldest first. need_id leaves every other journey out.
+    case = await city.history(need_id=message.need_id)
+    # Every actor in that history: each sender and each recipient.
+    # A citizen is citizen:..., an agent is agent:..., the Ledger is city:ledger.
+    actors: list[str] = []
+    for row in case:
+        for party in (row.sender, row.recipient):
+            if party and party not in actors:
+                actors.append(party)
+
+    # One completion through the City LLM Gateway, billed to the team.
+    # messages is the OpenAI list of role and content. The reply text is content.
+    # No team key raises KEY_UNKNOWN; this turn still continues.
+    model_text = ""
+    try:
+        reply = await city.llm(
+            [
+                {
+                    "role": "system",
+                    "content": "You help a citizen. Reply in one short sentence.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Actors in this case: {', '.join(actors) or sender_id}. "
+                        f"The new message is: {text}"
+                    ),
+                },
+            ],
+            need_id=message.need_id,
+        )
+        content = reply["content"]
+        if isinstance(content, str):
+            model_text = content.strip()
+    except CapError:
+        model_text = ""
 
     # Agents whose role we can use. When the text names a capability, the card must list it.
     # The list is not ranked.
@@ -46,8 +84,7 @@ async def main(need: Need, city: City) -> None:
     # This turn is that close: an agent we asked has answered, so forward the text
     # to the citizen with the flag.
     if sender_id.startswith("agent:"):
-        # The citizen is whoever opened the case. Read them from this case's history.
-        case = await city.history(need_id=message.need_id)
+        # The citizen is whoever opened the case. They are one of the actors above.
         citizen = ""
         for row in case:
             if row.sender.startswith("citizen:"):
@@ -56,7 +93,10 @@ async def main(need: Need, city: City) -> None:
         if citizen:
             who = sender_name if not sender_role else f"{sender_name} ({sender_role})"
             # status="closed" is the flag. The text is the final answer the judge reads.
-            await city.say(citizen, f"{who} says: {text}", status="closed")
+            closing = f"{who} says: {text}"
+            if model_text:
+                closing = f"{closing} {model_text}"
+            await city.say(citizen, closing, status="closed")
         return
 
     # A new question comes from a citizen. Ledger lines and our own messages are not one.
@@ -90,11 +130,11 @@ async def main(need: Need, city: City) -> None:
 
     # Tell the citizen who we asked. status="wip" keeps the case open.
     # The agent's answer arrives later, as a new message, and that turn sends status="closed".
-    await city.say(
-        sender_id,
-        (
-            f"I asked {chosen.agent_id}"
-            f" (role {chosen.role or '-'}, capabilities {chosen_capabilities or '-'})."
-        ),
-        status="wip",
+    # When the gateway answered, that sentence is part of this reply.
+    told = (
+        f"I asked {chosen.agent_id}"
+        f" (role {chosen.role or '-'}, capabilities {chosen_capabilities or '-'})."
     )
+    if model_text:
+        told = f"{told} {model_text}"
+    await city.say(sender_id, told, status="wip")
