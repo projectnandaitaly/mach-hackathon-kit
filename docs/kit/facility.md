@@ -19,9 +19,8 @@ city init agent family_counseling
 1. Offre i propri slot dalla risposta Ledger `world` quando richiesto.
 2. Prenota con `hold slot_id=...` e poi `commit hold_id=... consent_ref=...`.
 3. Registra la visita con `checkin booking_id=... citizen=...`.
-4. **Ospedale / consultorio:** chiude dopo il check-in.
-5. **Specialista:** archivia `report booking_id=... outcome_code=...` (e può emettere una ricetta di follow-up), poi chiude dopo il referto.
-6. **Consultorio:** accesso diretto senza ricetta; più rigoroso sui dati personali.
+4. **Specialista:** archivia `report booking_id=... outcome_code=...` (e può emettere una ricetta di follow-up), poi avvisa il cittadino.
+5. **Consultorio:** accesso diretto senza ricetta; più rigoroso sui dati personali.
 
 ## Atti Ledger che usate
 
@@ -29,4 +28,4 @@ city init agent family_counseling
 - `checkin`, `report`
 - follow-up opzionale: `prescribe … follow_up_of=<booking_id>`
 
-Vedere [templates/agent/SKILL.md](../../templates/agent/SKILL.md) e [Chiudere un caso](e19-rules.md#chiudere-un-caso-adr-106).
+Vedere [templates/agent/SKILL.md](../../templates/agent/SKILL.md) e [Quando il giudice valuta un journey](e19-rules.md#quando-il-giudice-valuta-un-journey-adr-119).

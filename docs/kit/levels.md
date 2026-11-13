@@ -39,9 +39,9 @@ Giulia scrive al vostro medico di base. Il messaggio è strutturato. Il codice �
 
 Paolo scrive nella stessa ora. Il suo codice è `SYM-PALPITATIONS`, che da solo sarebbe una visita cardiologica, e `is_emergency` è vero. La frase dice che ha dolore al petto da stamattina. Il dolore al petto è la red flag di quella riga di protocollo. Il medico di base scala, motivo `red_flag`. Paolo non riceve ricetta. Il journey termina escalato e il giudice non scrive penalità.
 
-Lea porta lo stesso codice di Paolo e nessuna red flag. Esce con `VIS-CARD` a priorità B. A un livello successivo siederà con il vostro specialista per il referto. Oggi la ricetta chiude il suo caso.
+Lea porta lo stesso codice di Paolo e nessuna red flag. Esce con `VIS-CARD` a priorità B. A un livello successivo siederà con il vostro specialista per il referto. Oggi la ricetta è la fine del suo journey.
 
-Quando quella ricetta o quella escalation è l’ultima parola, il medico di base chiude il caso e il giudice parte subito. Una procedura o una priorità sbagliata vale −1. Se il medico di base non scala Paolo, il giudice scrive −2. Una frase che dice solo di chiamare il 112, senza l’atto `escalate.emergency`, non è un’escalation: il giudice legge la parola d’atto e i token `chiave=valore`, come fa `understood()`.
+Il giudice valuta il journey circa un minuto dopo quella ricetta o quella escalation. Una procedura o una priorità sbagliata vale −1. Se il medico di base non scala Paolo, il giudice scrive −2. Una frase che dice solo di chiamare il 112, senza l’atto `escalate.emergency`, non è un’escalation: il giudice legge la parola d’atto e i token `chiave=valore`, come fa `understood()`.
 
 **La morale.** La tabella di protocollo è l’intera risposta clinica. Prescrivete la sua riga, o scalate la red flag, e questo cittadino è a posto.
 
@@ -57,8 +57,6 @@ Elena vuole solo un medico che parli inglese. Uno slot solo in italiano è fuori
 
 I posti che un altro cittadino ha già committato escono dall’insieme prima del giudizio. Perdere quella corsa lascia il punteggio intatto.
 
-Da questo livello in poi, la chiusura del medico di base dopo la ricetta è ignorata: Giulia è già andata al centro prenotazioni, e il centro non deve chiudere dopo la ricevuta perché la visita è ancora davanti.
-
 **La morale.** Verificate la ricetta, offrite posti che esistono e consegnate la ricevuta del Ledger.
 
 ## Livello 3. La città inizia a parlare
@@ -69,7 +67,7 @@ Il journey ora passa dalla visita. Dopo la ricevuta Giulia fa check-in all’osp
 
 Lea siede con lo specialista. Dopo il check-in lo specialista chiede consenso con scopo `report_sharing`, archivia il referto sotto il `consent_ref` restituito e può aggiungere una ricetta di follow-up quando il journey ne ha bisogno. La tabella di protocollo non ha una colonna follow-up. Quella scelta è dello specialista. Un referto archiviato con il follow-up che il caso richiede vale +2. Un referto mancante vale −1.
 
-Marta è Lea, e dice no alla condivisione del referto. Il rifiuto di solito arriva in parole semplici, senza nome d’atto. `understood()` allora legge un `need.request` senza campi. Trattate il campo mancante come un no, archiviate il referto non condiviso e chiudete. Aspettare un consenso che non arriverà tiene fermo il journey fino al timeout.
+Marta è Lea, e dice no alla condivisione del referto. Il rifiuto di solito arriva in parole semplici, senza nome d’atto. `understood()` allora legge un `need.request` senza campi. Trattate il campo mancante come un no, archiviate il referto non condiviso e avvisate il cittadino. Aspettare un consenso che non arriverà tiene fermo il journey fino al timeout.
 
 Chiara non scrive mai al medico di base. Scrive al consultorio, accesso libero, procedura `CONS-GIN`, nessun `prescription_number`. Prenotatela e fatele fare check-in. Chiederle un numero di ricetta la fa tacere: il journey termina senza risposta, chiedere una ricetta vale −1, e prenotarla senza vale +2.
 
@@ -149,7 +147,7 @@ Il giudice valuta il mondo e il Ledger. La fluidità non è valutata. Un cittadi
 
 ## Avanti
 
-1. [Regole del care journey](e19-rules.md) — rubrica, chiusura, conformance, LLM
+1. [Regole del care journey](e19-rules.md) — rubrica, quando parte il giudice, conformance, LLM
 2. Note di ruolo — [Medico di base](gp.md) · [Centro prenotazioni](booking_centre.md) · [Facility](facility.md)
 
 Prima: [Per iniziare](../guides/getting-started.md) → [Sviluppare agenti](../guides/develop-agents.md).

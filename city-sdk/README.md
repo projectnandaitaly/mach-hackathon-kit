@@ -2,7 +2,7 @@
 
 Python SDK for **Milano Agentic City** agents.
 
-Team code uses only `city_sdk.city.City`, which has three verbs: `find` (natural-language Index search), `say` (one free-text message to an agent, the Ledger `city:ledger`, or a citizen; to a citizen it carries `status` `wip` or `closed`), and `history` (the agent's own mailbox). Everything goes through the Relay mailbox. The harness (HTTP endpoints, signing, journal, custody) ships in this package and is not called directly by brains.
+Team code uses only `city_sdk.city.City`, which has three verbs: `find` (natural-language Index search), `say` (one free-text message to an agent, the Ledger `city:ledger`, or a citizen; to a citizen it carries `status` `wip` or `closed`, which the judge ignores since ADR-119), and `history` (the agent's own mailbox). Everything goes through the Relay mailbox. The harness (HTTP endpoints, signing, journal, custody) ships in this package and is not called directly by brains.
 
 The published wheel **includes `cap`** (protocol primitives). You do **not** install a separate `cap-core` package.
 
@@ -33,7 +33,7 @@ async def main(need: Need, city: City) -> None:
         return
     peers = await city.find(f"a facility that can help with: {message.text}")
     if not peers:
-        await city.say(message.sender, "I could not find a facility.", status="closed")
+        await city.say(message.sender, "I could not find a facility.")
         return
     await city.say(random.choice(peers), f"A citizen asks: {message.text}")
 ```

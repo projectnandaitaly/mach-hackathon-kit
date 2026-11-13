@@ -18,7 +18,6 @@ capabilities:
 2. Chiede consenso e vincoli del cittadino.
 3. Offre slot dalla risposta Ledger `world` entro la scadenza di priorità (attraversa altre ASST solo se la propria non ne ha).
 4. Chiede alla facility di prenotare, poi inoltra la `booking.receipt`.
-5. **Non** chiude dopo la ricevuta — la visita è ancora davanti.
 
 Dal livello 4 in su le squadre di solito estendono matching linguistico, posti scarsi, liste d’attesa, rinnovi e ripensamenti.
 

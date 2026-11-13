@@ -76,13 +76,9 @@ async def main(need: Need, city: City) -> None:
             sender_capabilities = ", ".join(peer.capabilities)
             break
 
-    # Close the case. The flag is status="closed" on city.say to the citizen.
-    # It ends the journey and the judge scores it from this message.
-    # The flag is accepted only on a message to a citizen. On an agent or the Ledger
-    # the call is refused and nothing is sent. Only the agent the citizen wrote to
-    # last can close. A later message to the citizen is ignored once the case is closed.
-    # This turn is that close: an agent we asked has answered, so forward the text
-    # to the citizen with the flag.
+    # An agent we asked has answered: forward the text to the citizen.
+    # There is nothing to close. The judge scores the journey about a minute after
+    # the citizen reaches its own end (prescription, receipt, check-in, or report).
     if sender_id.startswith("agent:"):
         # The citizen is whoever opened the case. They are one of the actors above.
         citizen = ""
@@ -92,11 +88,10 @@ async def main(need: Need, city: City) -> None:
                 break
         if citizen:
             who = sender_name if not sender_role else f"{sender_name} ({sender_role})"
-            # status="closed" is the flag. The text is the final answer the judge reads.
-            closing = f"{who} says: {text}"
+            answer = f"{who} says: {text}"
             if model_text:
-                closing = f"{closing} {model_text}"
-            await city.say(citizen, closing, status="closed")
+                answer = f"{answer} {model_text}"
+            await city.say(citizen, answer)
         return
 
     # A new question comes from a citizen. Ledger lines and our own messages are not one.
@@ -110,8 +105,8 @@ async def main(need: Need, city: City) -> None:
             continue
         choices.append(peer)
     if not choices:
-        # Nothing to ask. Close here with the same flag, status="closed".
-        await city.say(sender_id, "I could not find an agent for this.", status="closed")
+        # Nothing to ask. Tell the citizen.
+        await city.say(sender_id, "I could not find an agent for this.")
         return
 
     # The city does not choose. This brain asks the first peer in the list.
@@ -128,8 +123,7 @@ async def main(need: Need, city: City) -> None:
         ),
     )
 
-    # Tell the citizen who we asked. status="wip" keeps the case open.
-    # The agent's answer arrives later, as a new message, and that turn sends status="closed".
+    # Tell the citizen who we asked. The agent's answer arrives later, as a new message.
     # When the gateway answered, that sentence is part of this reply.
     told = (
         f"I asked {chosen.agent_id}"
@@ -137,4 +131,4 @@ async def main(need: Need, city: City) -> None:
     )
     if model_text:
         told = f"{told} {model_text}"
-    await city.say(sender_id, told, status="wip")
+    await city.say(sender_id, told)

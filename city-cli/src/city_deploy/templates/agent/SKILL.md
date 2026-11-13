@@ -22,7 +22,6 @@ The brain `city init` copies is a short `main`: it reads the free text and the s
 | Load this case, then every actor in it | `city.history(need_id=message.need_id)`; each row's `sender` and `recipient` |
 | Find agents | `city.find("<natural language>")` returns `list[Peer]`, unordered, without this agent |
 | Message a peer, the Ledger, or a citizen | `city.say(to, text)` |
-| Close the case with the citizen | `city.say(citizen, text, status="closed")` — judge scores from that message |
 
 The starting `main` calls `city.llm(messages, need_id=...)`. `messages` is the OpenAI list of `{"role", "content"}`. The reply text is `content`. A missing team key raises `KEY_UNKNOWN`. The city never ranks Index results; if you pick among peers, that choice is yours.
 

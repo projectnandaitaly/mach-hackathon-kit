@@ -19,7 +19,7 @@ Una **squadra** è un gruppo in gara. Ogni squadra gestisce un’**ASST** (Azien
 - [Template](#template)
 - [Chi invia cosa](#chi-invia-cosa)
 - [Free text / chat sul bordo squadra (ADR-084)](#free-text--chat-sul-bordo-squadra-adr-084)
-- [Chiudere un caso (ADR-106)](#chiudere-un-caso-adr-106)
+- [Quando il giudice valuta un journey (ADR-119)](#quando-il-giudice-valuta-un-journey-adr-119)
 - [Rubrica](#rubrica)
 - [Come sviluppare un agente](#come-sviluppare-un-agente)
 - [Sviluppare e testare l’agente in locale](#sviluppare-e-testare-lagente-in-locale)
@@ -86,10 +86,10 @@ I messaggi sul bordo squadra sono **testo di chat** (ADR-084, ADR-110): il brain
 |---|---|
 | Play | Un mondo e un orologio di agenda per ogni ASST; il primo cittadino arriva due minuti reali dopo |
 | Giorni feriali di agenda, a qualsiasi ora | I cittadini continuano ad arrivare. Nessuno arriva di sabato o domenica di agenda (12 minuti reali ogni 42) |
-| Un journey termina | Il giudice scrive verdetto e valutazioni, e la classifica si muove: subito quando l’agente in carica chiude il caso, altrimenti circa un minuto reale dopo (vedere [Chiudere un caso](#chiudere-un-caso-adr-106)) |
+| Un journey termina | Il giudice scrive verdetto e valutazioni circa un minuto reale dopo, e la classifica si muove (vedere [Quando il giudice valuta un journey](#quando-il-giudice-valuta-un-journey-adr-119)) |
 | Il caso non è risolto | Quindici minuti reali dopo, lo stesso percorso riparte con un need nuovo e un identificativo cittadino nuovo, così non si sovrappone al tentativo precedente. Il giudice assegna di nuovo i punti, positivi o negativi. La curva non conta questi ritorni. Continua finché il caso si risolve. Un `city_fault` non riparte |
 | City Hall alza il livello | I cittadini che arrivano da allora sono estratti fino al nuovo livello; quelli già in corso tengono il loro |
-| Stop | La run termina. I journey aperti non sono giudicati |
+| Stop | La run termina. Ogni journey non ancora giudicato è giudicato subito; uno ancora aperto è valutato solo sui passi completati (ADR-119) |
 
 Gli orari di apertura sono 08:00–18:00 agenda (10 minuti reali). Una finestra di check-in è la mezza giornata dello slot (08:00–13:00 o 13:00–18:00 agenda, 5 minuti reali). Scadenze di priorità: **U** lo stesso giorno di agenda, **B** entro 2 giorni di agenda, **D** entro 5, **P** dopo (un’offerta in lista d’attesa è la risposta giusta).
 
@@ -151,7 +151,7 @@ Il brain vede il messaggio in ingresso come `need.message` (anche `city.inbound`
 | Verbo | Cosa fa |
 |---|---|
 | `await city.find(query)` | Ricerca Index in linguaggio naturale (1..500 caratteri). Restituisce `list[Peer]` senza ordine significativo e senza l’agente chiamante; la città non ordina mai |
-| `await city.say(to, text, *, status=None)` | Invia `text` (1..2000 caratteri) attraverso la mailbox del Relay a un agente, al Ledger (`LEDGER`, cioè `city:ledger`) o a un cittadino. Solo un messaggio a un cittadino porta `status`: `"wip"` (il default) o `"closed"`. Uno `status` verso un agente o il Ledger solleva `SCHEMA_INVALID` e non invia nulla. Restituisce il `msg_id` |
+| `await city.say(to, text, *, status=None)` | Invia `text` (1..2000 caratteri) attraverso la mailbox del Relay a un agente, al Ledger (`LEDGER`, cioè `city:ledger`) o a un cittadino. Solo un messaggio a un cittadino porta `status`: `"wip"` (il default) o `"closed"`, che non ha effetto sul giudizio (ADR-119). Uno `status` verso un agente o il Ledger solleva `SCHEMA_INVALID` e non invia nulla. Restituisce il `msg_id` |
 | `await city.history(peer=None, *, need_id=None)` | La vostra mailbox, dal più vecchio: ciò che avete inviato e ricevuto, filtrato per parte e/o caso |
 
 `city.llm(messages)` chiama il modello della squadra (vedere [Modelli (LLM Gateway)](#modelli-llm-gateway)); `city.agent_id` è il vostro id.
@@ -193,7 +193,6 @@ I tipi di messaggio sono quelli del profilo `mhm/1.0`. I campi sotto sono quelli
 | cittadino ↔ facility | `checkin` | `booking_id`, `ledger_ref`; `text` opzionale; la facility risponde con i valori del registro |
 | specialista → cittadino | `data.request`, `report`, `prescription` | chiedete consenso con scopo `report_sharing` (`consent purpose=report_sharing` nel testo); archiviate il referto con il Ledger sotto il `consent_ref` restituito; ricetta di follow-up opzionale via `prescribe ... follow_up_of=<booking_id>` e `report ... follow_up_prescription_number=...` al Ledger. La tabella di protocollo del mondo elenca solo `symptom_code` → `procedure` / `priority` / `red_flags` — **non** ha un campo follow-up; un follow-up è scelta dello specialista quando il journey ne ha bisogno |
 | cittadino → consultorio | `need.request`, `confirm` | accesso libero, senza ricetta; `text` opzionale |
-| agente in carica → cittadino | qualsiasi testo con `status="closed"` | la vostra risposta finale; vedere [Chiudere un caso](#chiudere-un-caso-adr-106) |
 
 I messaggi outbound della squadra sono testo di chat (1..2000), inviati con `city.say`. La fluidità non cambia mai la scelta del cittadino né il punteggio di mondo; lo fanno solo i campi scalari estratti e i fatti di Ledger.
 
@@ -209,20 +208,17 @@ Il cittadino decide ancora in codice. Gemma estrae atto e campi scalari, chiede 
 
 **Il giudice legge la chat allo stesso modo.** Per un check-in, un’escalation, un’offerta, una ricevuta, un consenso o una richiesta dati, il giudice cerca la parola d’atto nel testo, seguita dai token `chiave=valore`, esattamente come li parse `understood()`. Scriveteli entrambi voi. Una frase che dice solo «chiami il 112» senza `escalate.emergency` non è un’escalation.
 
-## Chiudere un caso (ADR-106)
+## Quando il giudice valuta un journey (ADR-119)
 
-Quando l’agente ha dato la risposta finale e non ha più nulla da fare per il cittadino, inviatela con `await city.say(citizen, text, status="closed")`. Ogni altro messaggio a un cittadino porta `status="wip"`, il default. Il giudice parte su quel journey non appena arriva il messaggio `closed`. (Il token `case.closed` nel testo è ancora letto per una release; usate `status`.)
+Non dovete segnalare la fine di un caso. Ogni cittadino sa fin dall’inizio dove finisce il suo journey: alla ricetta, alla ricevuta, al check-in o al referto, secondo il suo livello. Quando ci arriva, oppure si arrende per un timeout, il giudice valuta il journey circa un minuto reale dopo. La regola è la stessa per tutte le squadre.
 
-- **Solo l’agente in carica può chiudere.** È l’agente a cui il cittadino ha scritto per ultimo. Una chiusura da qualsiasi altro agente è ignorata.
-- **Una chiusura termina il journey.** Se il cittadino aspetta ancora qualcosa, il journey termina lì con esito `closed`. Chiudete solo quando il vostro passo è l’ultimo: dopo una ricetta del medico di base il cittadino è già passato al centro prenotazioni, quindi la chiusura del medico di base è ignorata; un centro prenotazioni non deve chiudere dopo la ricevuta, perché la visita è ancora davanti.
-- **Taglio netto.** Il giudice valuta solo i record di Ledger scritti fino alla chiusura. Ciò che i vostri agenti fanno dopo resta sul Ledger ma non è valutato; il verdetto lo conta in `closed.late_facts`. I messaggi che raggiungono il cittadino dopo la chiusura sono ignorati.
-- **Se nessuno chiude**, il giudice parte circa un minuto reale dopo la fine del journey, come prima. Una volta che un agente ha chiuso un caso nella run, la città aspetta fino a 10 minuti reali la sua chiusura sui journey successivi di cui è in carica, poi giudica comunque.
-
-Chiudete quando avete finito, non prima: una chiusura inviata mentre il vostro lavoro è ancora in volo taglia quel lavoro fuori dal punteggio.
+- **`status="closed"` non cambia nulla.** Lo SDK lo accetta ancora, e anche il messaggio `case.closed`, ma non termina il journey e non anticipa né ritarda il giudizio. Un messaggio con `status="closed"` è letto come qualsiasi altro messaggio. Potete smettere di inviarlo.
+- **Scrivete sul Ledger prima di avvisare il cittadino.** Il giudice valuta i fatti scritti fino alla fine del journey e nel minuto successivo.
+- **Allo Stop** ogni journey ancora aperto è giudicato subito, solo sui passi già completati: il passo che il cittadino stava aspettando non è valutato.
 
 ## Rubrica
 
-Ogni valutazione è legata a una transazione tra chi valuta e il vostro agente e deve arrivare entro 30 minuti di tempo di agenda. Il giudice scrive un verdetto per journey con i fatti e le righe scattate. Vedete verdetti e valutazioni nella console squadra sotto **Journeys**; la stessa tabella è lì sotto la rubrica.
+Ogni valutazione è legata a una transazione tra chi valuta e il vostro agente e deve arrivare entro 2 ore reali da quella transazione (ADR-119), così anche il primo passo di un journey lungo è valutato. Il giudice scrive un verdetto per journey con i fatti e le righe scattate. Vedete verdetti e valutazioni nella console squadra sotto **Journeys**; la stessa tabella è lì sotto la rubrica.
 
 | Valutatore → vostro agente | Fatto | Punteggio |
 |---|---|---|
@@ -628,7 +624,7 @@ Per cambiare comportamento: modificate `agent/agent.py` nello stesso progetto, p
 
 ## Mentre la città gira
 
-La città gira un mercato da Play a Stop. Tiene un mondo e un orologio di agenda per ogni ASST, invia cittadini uno dopo l’altro (lo stesso cittadino a ogni ASST allo stesso istante di agenda), trasporta messaggi firmati e scrive un verdetto per journey con le valutazioni della [Rubrica](#rubrica) quando l’agente in carica chiude il caso, oppure circa un minuto dopo la fine di quel journey. City Hall alza il livello durante la giornata: un cittadino è estratto fino al livello in vigore quando arriva, così più del care journey, scarsità, fault e cambi di regola si accendono col passare del giorno. Le [Regole di gioco](#regole-di-gioco) restano in vigore tutta la giornata.
+La città gira un mercato da Play a Stop. Tiene un mondo e un orologio di agenda per ogni ASST, invia cittadini uno dopo l’altro (lo stesso cittadino a ogni ASST allo stesso istante di agenda), trasporta messaggi firmati e scrive un verdetto per journey con le valutazioni della [Rubrica](#rubrica) circa un minuto reale dopo la fine di quel journey; allo Stop giudica subito anche i journey ancora aperti. City Hall alza il livello durante la giornata: un cittadino è estratto fino al livello in vigore quando arriva, così più del care journey, scarsità, fault e cambi di regola si accendono col passare del giorno. Le [Regole di gioco](#regole-di-gioco) restano in vigore tutta la giornata.
 
 Un cittadino segue il care journey in [Il gioco](#il-gioco): sintomo → medico di base → ricetta → centro prenotazioni → offerte → scelta → confirm → ricevuta → check-in → visita → referto, con un possibile follow-up. I cittadini estraggono campi scalari dal vostro testo di chat e decidono contro il registry; la fluidità non è valutata. Valutano gli agenti con cui hanno avuto a che fare. Le valutazioni della squadra stessa valgono zero. Non c’è un agente fallback della città sulla vostra ASST.
 

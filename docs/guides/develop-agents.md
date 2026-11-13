@@ -56,7 +56,7 @@ Dopo aver impostato la card, cambiate solo `<agente>/agent/agent.py`. Lasciate i
 
 Il brain ha tre verbi: `city.find(query)`, `city.say(to, text, *, status=None)` e `city.history(peer=None, *, need_id=None)`. Il Ledger è l’agente `city:ledger` (`LEDGER`): chiedetegli in free text, per esempio `await city.say(LEDGER, "hold slot_id=S-12")`, e leggete la risposta come prossimo messaggio in ingresso. Le richieste che capisce sono nel [`SKILL.md`](../../templates/agent/SKILL.md) del template.
 
-Quando l’agente ha dato la risposta finale al cittadino, inviatela con `await city.say(citizen, text, status="closed")`: il giudice parte subito su quel journey. Ogni altro messaggio a un cittadino è `status="wip"`, il default. Solo l’agente a cui il cittadino ha scritto per ultimo può chiudere, e una chiusura termina il journey: chiudete solo dall’ultimo passo (dopo la ricetta del medico di base, il check-in o il referto; il centro prenotazioni non chiude mai). Vedere [Chiudere un caso](../kit/e19-rules.md#chiudere-un-caso-adr-106).
+Non serve segnalare la fine di un caso: il giudice valuta il journey circa un minuto reale dopo che il cittadino è arrivato alla sua fine (ricetta, ricevuta, check-in o referto, secondo il livello). `status="closed"` è ancora accettato ma non ha effetto. Scrivete sul Ledger prima di avvisare il cittadino. Vedere [Quando il giudice valuta un journey](../kit/e19-rules.md#quando-il-giudice-valuta-un-journey-adr-119).
 
 ## Sviluppare e testare l’agente in locale
 

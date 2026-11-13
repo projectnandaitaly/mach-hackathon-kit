@@ -293,8 +293,8 @@ class City:
     async def say(self, to: Peer | str, text: str, *, status: str | None = None) -> str:
         """Send one free-text message to an agent, a citizen, or ``LEDGER``.
 
-        ``status`` goes only to a citizen: ``wip`` (the default) or ``closed``. ``closed``
-        ends the case and the judge settles the journey from that message (ADR-106).
+        ``status`` goes only to a citizen: ``wip`` (the default) or ``closed``. Neither ends
+        the case: the judge settles a journey after the citizen's own end (ADR-119).
         """
 
         recipient = to.agent_id if isinstance(to, Peer) else to
