@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Protocol
 
 from cap.core.errors import CapError
 
@@ -47,3 +48,21 @@ def assert_create(
 def assert_build(*, building: int) -> None:
     if building >= MAX_CONCURRENT_BUILDS:
         raise QuotaExceeded("builds")
+
+
+class UpdateInterval(Protocol):
+    """Minutes City Hall stored. Deploy only reads them (ADR-120)."""
+
+    def minutes(self) -> int: ...
+
+
+def assert_agent_update(*, previous: datetime | None, now: datetime, minutes: int) -> None:
+    """Refuse a second accept of the same agent before ``minutes`` have passed.
+
+    ``minutes`` of 0 is off. A missing ``previous`` is the agent's first accept.
+    """
+
+    if minutes <= 0 or previous is None:
+        return
+    if now < previous + timedelta(minutes=minutes):
+        raise QuotaExceeded(f"this agent can be updated once every {minutes} minutes")

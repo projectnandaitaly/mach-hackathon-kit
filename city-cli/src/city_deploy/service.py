@@ -42,6 +42,8 @@ from city_deploy.image import Recipe, SourceFile, parse_dockerfile
 from city_deploy.pipeline import NoLocks, SharedLocks, SharedRollouts
 from city_deploy.quota import (
     MAX_IMAGE_BYTES,
+    UpdateInterval,
+    assert_agent_update,
     assert_build,
     assert_create,
     check_scale,
@@ -179,6 +181,7 @@ class DeployService:
         builder: ImageBuilder | None = None,
         evidence: EvidenceReader | None = None,
         rows: DeployRows | None = None,
+        update_interval: UpdateInterval | None = None,
     ) -> None:
         self.builder = builder
         self._jobs: set[asyncio.Task[None]] = set()
@@ -190,6 +193,7 @@ class DeployService:
         self.runtime: Runtime = runtime or MemoryRuntime()
         self.state = state
         self.evidence = evidence
+        self.update_interval = update_interval
         self.teams: TeamDirectory = teams if teams is not None else OpenTeamDirectory()
         self.team_keys: TeamKeysPort = team_keys if team_keys is not None else MemoryTeamKeys()
         self.approve_token = approve_token
@@ -750,6 +754,7 @@ class DeployService:
     def _open_deployment(self, accepted: _Accepted) -> dict[str, Any]:
         agent_id = accepted.agent_id
         self._assert_quota(accepted.team_id, agent_id)
+        self._assert_update_interval(accepted.team_id, agent_id)
         deployment_id = "dep-" + uuid4().hex
         deployment = Deployment(
             deployment_id=deployment_id,
@@ -1482,6 +1487,34 @@ class DeployService:
             agent_id=agent_id,
             recent_deploys=len(self._recent_deploys(team_id, agent_id)),
         )
+
+    def _assert_update_interval(self, team_id: str, agent_id: str) -> None:
+        """ADR-120: one accepted update of this agent every X minutes. X of 0 is off."""
+
+        minutes = 0 if self.update_interval is None else self.update_interval.minutes()
+        previous = self._last_deploy_at(team_id, agent_id)
+        try:
+            assert_agent_update(previous=previous, now=self.now(), minutes=minutes)
+        except QuotaExceeded:
+            _LOG.info(
+                "agent update interval",
+                extra={
+                    "need_id": None,
+                    "msg_id": None,
+                    "agent_id": agent_id,
+                    "team_id": team_id,
+                    "minutes": minutes,
+                },
+            )
+            raise
+
+    def _last_deploy_at(self, team_id: str, agent_id: str) -> datetime | None:
+        moments = [
+            item.created_at for item in self._team_rows(team_id) if item.agent_id == agent_id
+        ]
+        if not moments:
+            return None
+        return max(moments)
 
     def _team_agents(self, team_id: str) -> set[str]:
         return {item.agent_id for item in self._team_rows(team_id)}
