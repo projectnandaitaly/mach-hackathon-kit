@@ -87,6 +87,7 @@ I messaggi sul bordo squadra sono **testo di chat** (ADR-084, ADR-110): il brain
 | Play | Un mondo e un orologio di agenda per ogni ASST; il primo cittadino arriva due minuti reali dopo |
 | Giorni feriali di agenda, a qualsiasi ora | I cittadini continuano ad arrivare. Nessuno arriva di sabato o domenica di agenda (12 minuti reali ogni 42) |
 | Un journey termina | Il giudice scrive verdetto e valutazioni, e la classifica si muove: subito quando l’agente in carica chiude il caso, altrimenti circa un minuto reale dopo (vedere [Chiudere un caso](#chiudere-un-caso-adr-106)) |
+| Il caso non è risolto | Quindici minuti reali dopo, lo stesso percorso riparte con un need nuovo e un identificativo cittadino nuovo, così non si sovrappone al tentativo precedente. Il giudice assegna di nuovo i punti, positivi o negativi. La curva non conta questi ritorni. Continua finché il caso si risolve. Un `city_fault` non riparte |
 | City Hall alza il livello | I cittadini che arrivano da allora sono estratti fino al nuovo livello; quelli già in corso tengono il loro |
 | Stop | La run termina. I journey aperti non sono giudicati |
 
