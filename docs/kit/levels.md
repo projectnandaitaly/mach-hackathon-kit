@@ -4,7 +4,7 @@ Queste scene raccontano come si sente un care journey mentre la città gira. Pun
 
 City Hall alza una **soglia** durante la giornata. Il numero sul banner è quella soglia. Ogni nuovo cittadino è estratto a un livello da 1 fino alla soglia, con il numero di livello come peso, e lo mantiene per tutto il journey. Con soglia 4 i pesi sono 1, 2, 3 e 4: un nuovo arrivo ha quattro volte più probabilità di arrivare al livello 4 che al livello 1. Alzare la soglia cambia chi arriva dopo. Un journey già aperto tiene il livello con cui è partito.
 
-Ogni ASST incontra lo stesso cittadino allo stesso istante di agenda, con i propri medici e i propri ambulatori. Un giorno di agenda sono sei minuti reali. Arriva circa un cittadino ogni due minuti reali, e l’agenda è quieta il sabato e la domenica.
+Ogni ASST incontra lo stesso cittadino allo stesso istante di agenda, con i propri medici e i propri ambulatori. L’agenda corre 60 volte più veloce del tempo reale: un giorno di agenda sono ventiquattro minuti reali, un’ora di agenda è un minuto reale. Arriva circa un cittadino ogni due minuti reali, e l’agenda è quieta il sabato e la domenica.
 
 Dentro un livello estratto la città sceglie una persona che quel livello è abbastanza alto da includere. Un’estrazione a 4 può ancora essere Giulia con il mal di schiena. Amir, che serve una lingua dell’ASST vicina, compare solo dall’estrazione 4 in su. Più alta è la soglia, più spesso le persone difficili sono in coda. La [rubrica](e19-rules.md#rubrica) non cambia.
 
@@ -47,7 +47,7 @@ Il giudice valuta il journey circa un minuto dopo quella ricetta o quella escala
 
 ## Livello 2. La ricetta cammina fino allo sportello
 
-Giulia torna, e questa volta la ricetta è ciò che porta dopo. Porta il `prescription_number` al vostro centro prenotazioni. Il centro la verifica sul Ledger, chiede la prenotazione e offre posti che la città ha già contato nel suo insieme di risposta: fisiatria, entro la scadenza di priorità, con un medico che parla italiano. Aspetta trenta minuti di agenda dopo la prima offerta, circa sette secondi reali, poi sceglie. Mandate le offerte insieme. Conferma. L’ospedale tiene il posto e lo committa. La ricevuta in mano è quella firmata dal Ledger. Al livello 2 si ferma su quella ricevuta. La visita stessa è valutata dal livello 3, quando resta per il check-in.
+Giulia torna, e questa volta la ricetta è ciò che porta dopo. Porta il `prescription_number` al vostro centro prenotazioni. Il centro la verifica sul Ledger, chiede la prenotazione e offre posti che la città ha già contato nel suo insieme di risposta: fisiatria, entro la scadenza di priorità, con un medico che parla italiano. Mettete ogni slot nello stesso messaggio, ciascuno con `offer_id=` e `slot_id=`. Giulia sceglie in quel turno, sul primo messaggio che nomina un posto che può prenotare. Un messaggio successivo non entra in una scelta già fatta. Conferma. L’ospedale tiene il posto e lo committa. La ricevuta in mano è quella firmata dal Ledger. Al livello 2 si ferma su quella ricevuta. La visita stessa è valutata dal livello 3, quando resta per il check-in.
 
 Una ricevuta senza commit dietro è una prenotazione fantasma, −2.
 
@@ -101,9 +101,9 @@ Pietro è un follow-up. Il codice è `SYM-FOLLOWUP`, la visita è cardiologia, l
 
 Chiunque sia estratto al livello 6 o superiore vede rifiutato il primo hold del journey con `FACILITY_CANCELLED`. Sul percorso di Giulia quell’hold è all’ospedale, e l’ospedale invia un cancel. Il centro prenotazioni glielo dice, con un cancel e quel motivo, e offre un posto diverso entro la scadenza di priorità, senza aspettare di essere chiesto. La ricevuta che alla fine tiene appartiene a un’offerta successiva, e raggiunge comunque il check-in. Un centro che annuncia il cancel e poi non offre nulla perde la prenotazione. Lo stesso rifiuto del primo hold incontra Lea dallo specialista e Chiara al consultorio: la facility che teneva il posto è quella che deve offrirne un altro.
 
-Un hold è breve. Quello che apre l’SDK dura 120 secondi reali, otto ore di agenda. Committatelo o rilasciatelo. Quando scade, il posto è di nuovo libero e il cittadino ha ancora bisogno di una prenotazione entro la scadenza.
+Un hold è breve. Quello che apre l’SDK dura 120 secondi reali, due ore di agenda. Committatelo o rilasciatelo. Quando scade, il posto è di nuovo libero e il cittadino ha ancora bisogno di una prenotazione entro la scadenza.
 
-Sara prenota, tiene la ricevuta e un’ora di agenda dopo (quindici secondi reali) riscrive. Il motivo è `change_of_mind`. Rilasciate il posto che ha restituito, cercate di nuovo e prenotatela di nuovo, ancora entro la scadenza.
+Sara prenota, tiene la ricevuta e un’ora di agenda dopo (un minuto reale) riscrive. Il motivo è `change_of_mind`. Rilasciate il posto che ha restituito, cercate di nuovo e prenotatela di nuovo, ancora entro la scadenza.
 
 **La morale.** La prima prenotazione non reggerà. Ditelo, e metteteleene una nuova in mano prima che scada il termine.
 
@@ -113,7 +113,7 @@ Da questo livello ogni cittadino invia ogni `confirm` due volte, come due messag
 
 Lo stesso catalogo è visibile in tutta la città, quindi due cittadini possono volere il posto che avete appena descritto. Fate hold dello slot prima di offrirlo. Quando il Ledger risponde `NO_CAPACITY`, quel posto è andato: ditelo al cittadino e offritene un altro, e ricordate i posti che avete visto rifiutare. Un 4xx chiude quella richiesta. Ditelo al cittadino e mandate la prossima offerta come messaggio a sé.
 
-City Hall può spegnere ogni ospedale per un giorno di agenda, sei minuti reali, la stessa finestra per ogni ASST, qualunque livello portino i cittadini già in corso. L’ospedale esce dalla discovery. Il Relay rifiuta ogni messaggio verso di esso e da esso con `TARGET_NOT_VISIBLE`, e `city.confirm(...)` solleva. Catturate quell’errore. Ditelo al cittadino con un cancel e un motivo, tenete le offerte già arrivate e prenotate quando la porta si riapre. Un posto che non potevate raggiungere perché la città ha spento la facility resta fuori dal punteggio. Un check-in rifiutato mentre l’ospedale è giù non è premio né penalità, e il centro prenotazioni tiene i punti di prenotazione già guadagnati.
+City Hall può spegnere ogni ospedale per un giorno di agenda, ventiquattro minuti reali, la stessa finestra per ogni ASST, qualunque livello portino i cittadini già in corso. L’ospedale esce dalla discovery. Il Relay rifiuta ogni messaggio verso di esso e da esso con `TARGET_NOT_VISIBLE`, e `city.confirm(...)` solleva. Catturate quell’errore. Ditelo al cittadino con un cancel e un motivo, tenete le offerte già arrivate e prenotate quando la porta si riapre. Un posto che non potevate raggiungere perché la città ha spento la facility resta fuori dal punteggio. Un check-in rifiutato mentre l’ospedale è giù non è premio né penalità, e il centro prenotazioni tiene i punti di prenotazione già guadagnati.
 
 Il blackout, campo per campo, è in [Un ospedale va giù](e19-rules.md#un-ospedale-va-giù).
 
