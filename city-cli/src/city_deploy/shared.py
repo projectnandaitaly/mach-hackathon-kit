@@ -11,9 +11,11 @@ instance last saw, so an instance whose lease was taken over writes nothing.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
@@ -37,11 +39,19 @@ from city_deploy.secrets import OVERLAP, KeyRing
 
 STORES = ("snapshot", "sql")
 SESSION_TTL = timedelta(days=30)
+# Every running ``city deploy`` polls its deployment. Reading the session row on each poll
+# holds the event loop on the one SQL connection the pipelines also write through.
+POLL_SESSION = timedelta(seconds=30)
+_POLLED_MAX = 4096
 DEVICE_TTL = timedelta(minutes=15)
 # The owner renews every 10 s; a lease not renewed for 45 s is free for another instance.
 LEASE = timedelta(seconds=45)
 # Phases with a pipeline behind them. Another instance resumes these after the lease expires.
 PIPELINE_PHASES = frozenset({"building", "conformance"})
+
+
+def _token_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def deploy_store_kind(environ: Mapping[str, str]) -> str:
@@ -385,6 +395,8 @@ class SharedState:
         self.rows = rows
         self.clock = clock
         self.deployments = SharedDeployments(rows, clock, holder)
+        self._polled: dict[str, tuple[TeamSession, datetime]] = {}
+        self._polled_lock = threading.Lock()
 
     # Sessions. The token is the caller's; the row holds its digest.
 
@@ -395,9 +407,34 @@ class SharedState:
         team_id, body = found
         return session_from({**body, "team_id": team_id})
 
+    def polled_session(self, token: str) -> TeamSession | None:
+        """``session`` for read-only polls, reused for ``POLL_SESSION``.
+
+        A purge on another instance reaches this read up to ``POLL_SESSION`` late, so
+        nothing that changes state may authorize with it.
+        """
+
+        now = self.clock.now()
+        key = _token_key(token)
+        with self._polled_lock:
+            held = self._polled.get(key)
+        if held is not None and now < held[1]:
+            return replace(held[0])
+        found = self.session(token)
+        with self._polled_lock:
+            if found is None:
+                self._polled.pop(key, None)
+                return None
+            if len(self._polled) >= _POLLED_MAX:
+                self._polled.clear()
+            self._polled[key] = (replace(found), now + POLL_SESSION)
+        return found
+
     def put_session(self, token: str, session: TeamSession) -> None:
         expires = self.clock.now() + SESSION_TTL
         self.rows.put_session(token, session.team_id, session_blob(session), expires)
+        with self._polled_lock:
+            self._polled.pop(_token_key(token), None)
 
     def team_sessions(self, team_id: str) -> int:
         return self.rows.team_session_count(team_id)
@@ -405,6 +442,9 @@ class SharedState:
     def drop_team(self, team_id: str) -> None:
         self.rows.drop_team_sessions(team_id)
         self.rows.drop_team_devices(team_id)
+        with self._polled_lock:
+            for key in [k for k, (held, _) in self._polled.items() if held.team_id == team_id]:
+                del self._polled[key]
 
     # Device login. A code is approved once and exchanged once, on any instance.
 

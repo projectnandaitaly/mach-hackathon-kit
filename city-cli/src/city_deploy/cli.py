@@ -730,7 +730,7 @@ _STEP_LABELS = {
 # Six local prep steps, then the four Deploy pipeline phases (build → promote).
 _DEPLOY_LOCAL_STEPS = 6
 _DEPLOY_STEP_TOTAL = _DEPLOY_LOCAL_STEPS + len(_STEP_LABELS)
-_POLL_SECONDS = 0.5
+_POLL_SECONDS = 2.0
 _FOLLOW_SECONDS = 20 * 60
 
 

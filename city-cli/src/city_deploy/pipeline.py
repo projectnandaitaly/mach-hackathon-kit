@@ -91,7 +91,7 @@ class SharedRollouts:
         clock: Clock,
         gate: RolloutGate,
         *,
-        poll: float = 1.0,
+        poll: float = 2.0,
     ) -> None:
         self._rows = rows
         self._deployments = deployments

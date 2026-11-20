@@ -1061,7 +1061,13 @@ class DeployService:
         return deployment.view()
 
     def get_deployment(self, token: str, deployment_id: str) -> dict[str, Any]:
-        session = self._session(token)
+        if self.shared is None:
+            session = self._session(token)
+        else:
+            found = self.shared.polled_session(token)
+            if found is None:
+                raise CapError("POLICY_VIOLATION", "unknown team")
+            session = found
         return self._owned(session, deployment_id).view()
 
     def team_deployments(self, team_id: str) -> dict[str, Any]:
