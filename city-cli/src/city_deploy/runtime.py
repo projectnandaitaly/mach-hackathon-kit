@@ -356,7 +356,7 @@ class GkeRuntime:
         probe: Callable[[str], Awaitable[tuple[int, str | None]]] | None = None,
         poll_interval: float = 0.25,
         ready_timeout: float = 300.0,
-        route_timeout: float = 240.0,
+        route_timeout: float | None = None,
         route_settle: int = 3,
         cleanup_poll: float = 2.0,
         neg_timeout: float = 45.0,
@@ -373,12 +373,13 @@ class GkeRuntime:
         self._probe = probe or _http_health
         self._poll = poll_interval
         self._ready_timeout = ready_timeout
-        self._route_timeout = route_timeout
         self._route_settle = route_settle
         self._cleanup_poll = cleanup_poll
         self._neg_timeout = neg_timeout
         self._terminating_timeout = terminating_timeout
         source = os.environ if environ is None else environ
+        # 420 s: at 240 s about a third of event rollouts died on a slow Gateway.
+        self._route_timeout = route_timeout if route_timeout is not None else _route_seconds(source)
         self._cloud = source.get("CITY_ENV") == "cloud"
         self._warm = _warm_rows(source)
         self._shared_applied = False
@@ -1527,6 +1528,21 @@ def _is_shared(row: Mapping[str, Any]) -> bool:
     return row.get("kind") == "Gateway" or (
         row.get("kind") == "Namespace" and name == "city-system"
     )
+
+
+def _route_seconds(environ: Mapping[str, str]) -> float:
+    """Seconds Deploy waits for the candidate route. ``CITY_DEPLOY_ROUTE_TIMEOUT`` overrides."""
+
+    raw = environ.get("CITY_DEPLOY_ROUTE_TIMEOUT", "").strip()
+    if not raw:
+        return 420.0
+    try:
+        seconds = float(raw)
+    except ValueError as exc:
+        raise CapError("SCHEMA_INVALID", "CITY_DEPLOY_ROUTE_TIMEOUT") from exc
+    if not 30.0 <= seconds <= 900.0:
+        raise CapError("SCHEMA_INVALID", "CITY_DEPLOY_ROUTE_TIMEOUT")
+    return seconds
 
 
 def _warm_rows(environ: Mapping[str, str]) -> list[dict[str, Any]]:
