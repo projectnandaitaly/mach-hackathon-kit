@@ -1280,7 +1280,7 @@ class WaveBanner(BaseModel):
     )
     scores_hidden: bool | None = Field(
         None,
-        description="ADR-121. When true, hall and team surfaces hide numeric scores (journeys show POSITIVE / NEGATIVE / NEUTRAL). Omitted means false.\n",
+        description="ADR-121. When true alone, hall and team surfaces hide numeric scores (journeys show POSITIVE / NEGATIVE / NEUTRAL). With names_hidden also true, the hall keeps real scores under aliases; team consoles still hide numbers. Omitted means false.\n",
     )
     names_hidden: bool | None = Field(
         None,
@@ -1288,7 +1288,7 @@ class WaveBanner(BaseModel):
     )
     revealed: list[constr(min_length=1)] | None = Field(
         None,
-        description="ADR-121. Team ids opened by Reveal next, in order. The hall plays one city-launch banner per new id, then adds that row to the ranking without a score. Kept after the last reveal so the sequence can finish. The score stays hidden while scores_hidden is true. Omitted when none are open or the veil is off.\n",
+        description="ADR-121. Team ids opened by Reveal next, in order. The hall plays one city-launch banner per new id, then flips that row from alias to real name (scores stay visible while both veil flags are on). Kept after the last reveal so the sequence can finish. Omitted when none are open or the veil is off.\n",
     )
 
 
@@ -1779,7 +1779,8 @@ class AdminCity(BaseModel):
         None, description="ADR-117. Score factor in force; omitted means the default 2."
     )
     scores_hidden: bool | None = Field(
-        None, description="ADR-121. When true, team and hall surfaces hide numeric scores."
+        None,
+        description="ADR-121. When true alone, team and hall surfaces hide numeric scores. With names_hidden also true, the hall keeps real scores under aliases.\n",
     )
     names_hidden: bool | None = Field(
         None, description="ADR-121. When true, the hall hides team names behind aliases."
