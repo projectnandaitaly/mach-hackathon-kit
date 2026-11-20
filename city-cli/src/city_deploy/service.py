@@ -1669,12 +1669,17 @@ class DeployService:
             await self._offload(opener, deployment.agent_id)
         self.runtime.egress[deployment.agent_id] = EGRESS
         await self._offload(self.secrets.issue_llm, deployment.agent_id)
-        self._record_placement(deployment)
+        # A candidate must not become the Relay target. Live messages stay on the
+        # release that is already serving, including while this rollout is still
+        # waiting for its own route. Conformance calls candidate_url directly.
+        if percent < 100:
+            self._keep_live_invoke(deployment)
         wait = getattr(self.runtime, "wait_ready", None)
         if callable(wait):
             await wait(deployment.agent_id)
         if percent < 100 or not publish:
             return
+        self._publish_serving_invoke(deployment.agent_id)
         await self._publish(deployment)
 
     async def _promote_update(self, deployment: Deployment) -> None:
@@ -1691,10 +1696,12 @@ class DeployService:
                 digest,
             )
             self.runtime.egress[deployment.agent_id] = EGRESS
-            self._record_placement(deployment)
             wait = getattr(self.runtime, "wait_ready", None)
             if callable(wait):
                 await wait(deployment.agent_id, pods=False)
+            # The serving Service now selects the candidate pods. Publish that
+            # door, not the candidate Service the rollout used.
+            self._publish_serving_invoke(deployment.agent_id)
             await self._publish(deployment)
             return
         await self._apply_traffic(deployment, 100)
@@ -1800,14 +1807,55 @@ class DeployService:
         if callable(quiesce):
             await self._offload(quiesce, deployment.agent_id)
 
-    def _record_placement(self, deployment: Deployment) -> None:
-        locate = getattr(self.runtime, "candidate_url", None)
-        if not callable(locate):
+    def _keep_live_invoke(self, deployment: Deployment) -> None:
+        """Point the Relay at the release already serving, when this one is a candidate."""
+
+        serving = self.runtime.serving(deployment.agent_id)
+        if serving is None or serving.version == deployment.version:
             return
-        url = locate(deployment.agent_id)
+        self._publish_serving_invoke(deployment.agent_id)
+
+    def _publish_serving_invoke(self, agent_id: str, *, only_if_candidate: bool = False) -> None:
+        """Record the serving door. A candidate URL is replaced when one was left behind."""
+
+        locate = getattr(self.runtime, "serving_url", None)
+        serving = self.runtime.serving(agent_id)
+        if not callable(locate) or serving is None or serving.traffic <= 0:
+            return
+        url = locate(agent_id)
         if not isinstance(url, str):
-            raise CapError("POLICY_VIOLATION", "invoke")
-        self.index.catalog.put_placement(deployment.agent_id, url, deployment.version)
+            return
+        try:
+            current = self.index.catalog.placement(agent_id)
+        except CapError:
+            current = None
+        candidate = f"{url.rstrip('/')}-candidate"
+        stolen = current is not None and current.invoke_base_url.rstrip("/") == candidate
+        if only_if_candidate and not stolen:
+            return
+        if (
+            current is not None
+            and current.invoke_base_url == url
+            and current.revision_tag == serving.version
+        ):
+            return
+        self.index.catalog.put_placement(agent_id, url, serving.version)
+        if stolen:
+            _LOG.info(
+                "live invoke restored to the serving route",
+                extra={"agent_id": agent_id, "detail": serving.version},
+            )
+
+    def _repoint_candidate_invokes(self) -> None:
+        """Boot heal: a Relay target left on a candidate door goes back to the release."""
+
+        if not callable(getattr(self.runtime, "serving_url", None)):
+            return
+        for agent_id in list(self.runtime.revisions):
+            try:
+                self._publish_serving_invoke(agent_id, only_if_candidate=True)
+            except CapError:
+                _LOG.exception("live invoke not restored", extra={"agent_id": agent_id})
 
     async def _index_publish(self, deployment: Deployment) -> None:
         """Publish only after health. The card is visible; there is no earlier state."""
@@ -1824,6 +1872,8 @@ class DeployService:
             revision.image_digest,
             100,
         )
+        # Before the candidate door is removed: the Relay must already be on this route.
+        self._publish_serving_invoke(agent_id)
         await self.index.put_agent(revision.card, role_header="deploy")
         await self._scale_down_superseded(agent_id)
 
@@ -1856,6 +1906,8 @@ class DeployService:
         rows = self.runtime.revisions.get(deployment.agent_id, [])
         if any(row.version == deployment.version and row.traffic == 100 for row in rows):
             return
+        # Withdraw deletes the candidate door. The Relay has to be on the release first.
+        self._publish_serving_invoke(deployment.agent_id)
         await self._withdraw(deployment, delete=True)
         adopt = getattr(self.runtime, "adopt", None)
         if callable(adopt):
@@ -1961,11 +2013,13 @@ class DeployService:
                         self._load_placement(agent_id, body)
                 for agent_id in placements:
                     self._adopt(agent_id)
+                self._repoint_candidate_invokes()
                 return
             # Cutover: the first instance on rows starts from the snapshot's book and
             # writes it to deploy_placements at its first checkpoint.
             raw = snapshot.get("runtime")
             self._restore_book(None if raw is None else _book(raw))
+            self._repoint_candidate_invokes()
             return
         deployments = _deployments(snapshot.get("deployments"))
         sessions = _sessions(snapshot.get("sessions"))
@@ -1984,6 +2038,7 @@ class DeployService:
         }
         self.agent_ids.load(snapshot.get("agent_ids"))
         self._restore_book(book)
+        self._repoint_candidate_invokes()
 
     # T12: with rows, each agent's placement book is one deploy_placements row.
 

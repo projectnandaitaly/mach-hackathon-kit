@@ -698,6 +698,21 @@ class GkeRuntime:
     def serving(self, agent_id: str) -> Revision | None:
         return self._book.serving(agent_id)
 
+    def serving_url(self, agent_id: str) -> str | None:
+        """Invoke URL of the release that is serving. Never the candidate door.
+
+        The Relay reads this from the Index. A rollout's candidate has its own
+        Service, and conformance calls that URL itself.
+        """
+
+        serving = self._book.serving(agent_id)
+        if serving is None or serving.traffic <= 0:
+            return None
+        team = serving.card.get("team", "team:unknown")
+        namespace = namespace_for(str(team))
+        slug = dns_name(id_name(agent_id))
+        return assert_city_invoke(f"https://{self.ingress_host}/{namespace}/{slug}")
+
     def evidence_url(self, agent_id: str) -> str:
         """Attestation base URL. CandidateSuite loads ``GET /v1/evidence`` there."""
 
