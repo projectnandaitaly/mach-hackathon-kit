@@ -9,6 +9,7 @@ Nothing here ranks or chooses: order is arrival, and every team has the same cap
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -17,6 +18,14 @@ from city_deploy.clock import Clock
 from city_deploy.errors import Conflict
 from city_deploy.rollouts import RolloutGate
 from city_deploy.shared import LEASE, DeployRows, SharedDeployments
+
+_LOG = logging.getLogger(__name__)
+# Postgres serialization_failure and deadlock_detected.
+_CONFLICT_STATES = frozenset({"40001", "40P01"})
+
+
+def _conflict(exc: BaseException) -> bool:
+    return getattr(exc, "sqlstate", None) in _CONFLICT_STATES
 
 
 class NoLocks:
@@ -107,14 +116,30 @@ class SharedRollouts:
         fence = self._deployments.fence(deployment_id)
         try:
             while True:
-                ahead = await asyncio.to_thread(self._admit, deployment_id, fence)
+                try:
+                    ahead = await asyncio.to_thread(self._admit, deployment_id, fence)
+                except Exception as exc:
+                    # Every waiting release asks every poll; under load the serializable
+                    # admission keeps conflicting. The release keeps its place and asks again.
+                    if not _conflict(exc):
+                        raise
+                    _LOG.warning(
+                        "rollout admission conflict; asking again",
+                        extra={"deployment_id": deployment_id},
+                    )
+                    await asyncio.sleep(self.poll)
+                    continue
                 if ahead is None:
                     break
                 on_position(ahead)
                 await asyncio.sleep(self.poll)
             yield
         finally:
-            await asyncio.to_thread(self._rows.leave, deployment_id, fence)
+            try:
+                await asyncio.to_thread(self._rows.leave, deployment_id, fence)
+            except Exception:
+                # The slot also ends when the deployment closes, so a lost leave is not fatal.
+                _LOG.exception("rollout slot leave failed", extra={"deployment_id": deployment_id})
 
     def _admit(self, deployment_id: str, fence: int) -> int | None:
         return self._rows.admit(

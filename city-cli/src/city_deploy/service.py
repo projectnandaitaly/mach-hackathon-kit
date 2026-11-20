@@ -14,7 +14,7 @@ import socket
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractAsyncContextManager, contextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from secrets import token_hex, token_urlsafe
@@ -971,9 +971,14 @@ class DeployService:
             async with team:
                 return await self._roll_and_release(deployment)
         deployment.step = "rollout"
-        async with self._rollout_slot(deployment), team:
-            deployment.detail = None
-            return await self._roll_and_release(deployment)
+        slot = AsyncExitStack()
+        await slot.enter_async_context(self._rollout_slot(deployment))
+        try:
+            async with team:
+                deployment.detail = None
+                return await self._roll_and_release(deployment, free_slot=slot.aclose)
+        finally:
+            await slot.aclose()
 
     def _rollout_slot(self, deployment: Deployment) -> AbstractAsyncContextManager[None]:
         def position(ahead: int) -> None:
@@ -983,7 +988,12 @@ class DeployService:
             return self._shared_rollouts.slot(deployment.deployment_id, position)
         return self.rollouts.slot(deployment.team_id, position)
 
-    async def _roll_and_release(self, deployment: Deployment) -> dict[str, Any]:
+    async def _roll_and_release(
+        self,
+        deployment: Deployment,
+        *,
+        free_slot: Callable[[], Awaitable[None]] | None = None,
+    ) -> dict[str, Any]:
         profile = self._profile(deployment.agent_id, deployment.version)
         # Remote releases always place a candidate first. Conformance hits that URL;
         # promote retargets the serving route only after PASS. A first release used to
@@ -993,7 +1003,13 @@ class DeployService:
             deployment.step = "rollout"
             started = time.perf_counter()
             try:
-                await self._apply_traffic(deployment, 1, publish=False, front_door=first_release)
+                await self._apply_traffic(
+                    deployment,
+                    1,
+                    publish=False,
+                    front_door=first_release,
+                    free_slot=free_slot,
+                )
             except RolloutFailed as exc:
                 if first_release:
                     await self._close_front_door(deployment)
@@ -1004,6 +1020,8 @@ class DeployService:
                     await self._close_front_door(deployment)
                 return self._refuse(deployment, "ERROR", "rollout failed", exc.message or exc.code)
             self._phase(deployment, "rollout", started, message="deploy phase finished")
+        if free_slot is not None:
+            await free_slot()
         deployment.step = "conformance"
         started = time.perf_counter()
         try:
@@ -1661,6 +1679,7 @@ class DeployService:
         *,
         publish: bool = True,
         front_door: bool = False,
+        free_slot: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         # Harness join resolves the team controller via Index.get(agent_id).
         # Register before the pod starts; stay off the public query until PASS.
@@ -1685,7 +1704,13 @@ class DeployService:
         if percent < 100:
             self._keep_live_invoke(deployment)
         wait = getattr(self.runtime, "wait_ready", None)
-        if callable(wait):
+        if callable(wait) and free_slot is not None:
+            # The slot bounds pod rollouts. The route waits on Gateway syncs, minutes
+            # apart, and a route that never comes must not hold a slot meanwhile.
+            await wait(deployment.agent_id, route=False)
+            await free_slot()
+            await wait(deployment.agent_id, pods=False)
+        elif callable(wait):
             await wait(deployment.agent_id)
         if percent < 100 or not publish:
             return

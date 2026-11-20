@@ -1,4 +1,6 @@
-"""Admission to the cluster-heavy phases of a release: rollout, conformance, promote.
+"""Admission to the cluster-heavy phase of a release: applying it and waiting for its pods.
+
+The route wait, conformance and promote run after the slot is given back.
 
 Strict arrival order with the same cap for every team. A waiting release whose team is
 at its cap does not hold back a later release of another team. Nothing is ranked.

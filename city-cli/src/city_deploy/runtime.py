@@ -569,8 +569,9 @@ class GkeRuntime:
                 }
             )
 
-    async def wait_ready(self, agent_id: str, *, pods: bool = True) -> None:
-        """Pods ready (unless ``pods`` is false), then ``/health`` through the ingress route."""
+    async def wait_ready(self, agent_id: str, *, pods: bool = True, route: bool = True) -> None:
+        """Pods ready (unless ``pods`` is false), then ``/health`` through the ingress route
+        (unless ``route`` is false)."""
 
         read = getattr(self.client, "get", None)
         placed = self._placed.get(agent_id)
@@ -601,6 +602,8 @@ class GkeRuntime:
                 if time.monotonic() >= deadline:
                     raise RolloutFailed("ERROR", "agent pods did not become ready in time")
                 await asyncio.sleep(self._poll)
+        if not route:
+            return
         url = self.candidate_url(agent_id) + "/health"
         deadline = time.monotonic() + self._route_timeout
         # The load balancer's proxies take a new route one by one, and for a while they can
