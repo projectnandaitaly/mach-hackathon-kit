@@ -221,6 +221,7 @@ class DeployService:
         # T12: placement book rows as this instance last read or wrote them.
         self._book_seen: dict[str, str] = {}
         self._pipelines: dict[str, asyncio.Task[Any]] = {}
+        self._agent_locks: dict[str, asyncio.Lock] = {}
         self._lease_loop: asyncio.Task[None] | None = None
         self.renew_every = 10.0
         self.sweep_every = 15.0
@@ -964,8 +965,23 @@ class DeployService:
         return await self._release_phases(deployment)
 
     async def _release_phases(self, deployment: Deployment) -> dict[str, Any]:
-        """Rollout, conformance, promote. A resumed pipeline starts here again."""
+        """Rollout, conformance, promote. A resumed pipeline starts here again.
 
+        One release of an agent at a time: two would move the same candidate placement
+        under each other, and the earlier one's promote finds the later version placed.
+        """
+
+        deployment.detail = "waiting for the previous release of this agent"
+        async with self._agent_turn(deployment.agent_id):
+            deployment.detail = None
+            return await self._release_phases_alone(deployment)
+
+    def _agent_turn(self, agent_id: str) -> AbstractAsyncContextManager[Any]:
+        if isinstance(self.locks, SharedLocks):
+            return self.locks.hold(f"agent:{agent_id}", exclusive=True)
+        return self._agent_locks.setdefault(agent_id, asyncio.Lock())
+
+    async def _release_phases_alone(self, deployment: Deployment) -> dict[str, Any]:
         team = self.locks.hold(f"team:{deployment.team_id}", exclusive=False)
         if not self.runtime.remote:
             async with team:

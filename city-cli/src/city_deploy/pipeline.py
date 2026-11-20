@@ -75,11 +75,21 @@ class SharedLocks:
             yield
         finally:
             self._held.discard(key)
-            await asyncio.to_thread(self._rows.unlock, name, holder)
+            try:
+                await asyncio.to_thread(self._rows.unlock, name, holder)
+            except Exception:
+                # An unrenewed row expires after LEASE, so a lost unlock is not fatal.
+                _LOG.exception("deploy lock release failed", extra={"lock": name})
 
     def _ask(self, name: str, holder: str, exclusive: bool) -> bool:
         now = self._clock.now()
-        return self._rows.lock(name, holder, exclusive=exclusive, now=now, until=now + LEASE)
+        try:
+            return self._rows.lock(name, holder, exclusive=exclusive, now=now, until=now + LEASE)
+        except Exception as exc:
+            if not _conflict(exc):
+                raise
+            _LOG.warning("deploy lock conflict; asking again", extra={"lock": name})
+            return False
 
     def held(self) -> list[tuple[str, str]]:
         return sorted(self._held)
