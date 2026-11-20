@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -51,18 +52,22 @@ def assert_build(*, building: int) -> None:
 
 
 class UpdateInterval(Protocol):
-    """Minutes City Hall stored. Deploy only reads them (ADR-120)."""
+    """Minutes City Hall stored. Deploy only reads them (ADR-120, ADR-140)."""
 
     def minutes(self) -> int: ...
 
 
-def assert_agent_update(*, previous: datetime | None, now: datetime, minutes: int) -> None:
-    """Refuse a second accept of the same agent before ``minutes`` have passed.
+def assert_team_deploy(*, previous: datetime | None, now: datetime, minutes: int) -> None:
+    """Refuse a team's next accept, of any agent, before ``minutes`` have passed.
 
-    ``minutes`` of 0 is off. A missing ``previous`` is the agent's first accept.
+    ``minutes`` of 0 is off. A missing ``previous`` is the team's first accept.
     """
 
     if minutes <= 0 or previous is None:
         return
-    if now < previous + timedelta(minutes=minutes):
-        raise QuotaExceeded(f"this agent can be updated once every {minutes} minutes")
+    opens = previous + timedelta(minutes=minutes)
+    if now < opens:
+        wait = max(1, math.ceil((opens - now).total_seconds() / 60))
+        raise QuotaExceeded(
+            f"a team can deploy once every {minutes} minutes; try again in {wait} min"
+        )

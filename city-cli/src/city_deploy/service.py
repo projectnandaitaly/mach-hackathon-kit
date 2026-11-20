@@ -43,9 +43,9 @@ from city_deploy.pipeline import NoLocks, SharedLocks, SharedRollouts
 from city_deploy.quota import (
     MAX_IMAGE_BYTES,
     UpdateInterval,
-    assert_agent_update,
     assert_build,
     assert_create,
+    assert_team_deploy,
     check_scale,
     recent,
 )
@@ -1533,15 +1533,17 @@ class DeployService:
         )
 
     def _assert_update_interval(self, team_id: str, agent_id: str) -> None:
-        """ADR-120: one accepted update of this agent every X minutes. X of 0 is off."""
+        """ADR-140: one accepted deployment per team every X minutes. X of 0 is off."""
 
         minutes = 0 if self.update_interval is None else self.update_interval.minutes()
-        previous = self._last_deploy_at(team_id, agent_id)
+        if minutes <= 0:
+            return
+        previous = self._last_deploy_at(team_id)
         try:
-            assert_agent_update(previous=previous, now=self.now(), minutes=minutes)
+            assert_team_deploy(previous=previous, now=self.now(), minutes=minutes)
         except QuotaExceeded:
             _LOG.info(
-                "agent update interval",
+                "team deploy interval",
                 extra={
                     "need_id": None,
                     "msg_id": None,
@@ -1552,13 +1554,8 @@ class DeployService:
             )
             raise
 
-    def _last_deploy_at(self, team_id: str, agent_id: str) -> datetime | None:
-        moments = [
-            item.created_at for item in self._team_rows(team_id) if item.agent_id == agent_id
-        ]
-        if not moments:
-            return None
-        return max(moments)
+    def _last_deploy_at(self, team_id: str) -> datetime | None:
+        return max((item.created_at for item in self._team_rows(team_id)), default=None)
 
     def _team_agents(self, team_id: str) -> set[str]:
         return {item.agent_id for item in self._team_rows(team_id)}
