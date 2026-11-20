@@ -1070,6 +1070,18 @@ class DeployService:
             session = found
         return self._owned(session, deployment_id).view()
 
+    async def get_deployment_async(self, token: str, deployment_id: str) -> dict[str, Any]:
+        """``get_deployment`` for the HTTP poll: a session read waits off the event loop."""
+
+        if self.shared is None:
+            return self.get_deployment(token, deployment_id)
+        found = self.shared.held_session(token)
+        if found is None:
+            found = await asyncio.to_thread(self.shared.polled_session, token)
+        if found is None:
+            raise CapError("POLICY_VIOLATION", "unknown team")
+        return self._owned(found, deployment_id).view()
+
     def team_deployments(self, team_id: str) -> dict[str, Any]:
         """Latest attempt for each agent. A failed first deploy stays on this list."""
 

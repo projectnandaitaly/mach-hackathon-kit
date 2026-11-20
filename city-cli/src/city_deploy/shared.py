@@ -407,6 +407,15 @@ class SharedState:
         team_id, body = found
         return session_from({**body, "team_id": team_id})
 
+    def held_session(self, token: str) -> TeamSession | None:
+        """The reused poll session while it is fresh. Never reads SQL."""
+
+        with self._polled_lock:
+            held = self._polled.get(_token_key(token))
+        if held is not None and self.clock.now() < held[1]:
+            return replace(held[0])
+        return None
+
     def polled_session(self, token: str) -> TeamSession | None:
         """``session`` for read-only polls, reused for ``POLL_SESSION``.
 
@@ -414,12 +423,11 @@ class SharedState:
         nothing that changes state may authorize with it.
         """
 
+        held = self.held_session(token)
+        if held is not None:
+            return held
         now = self.clock.now()
         key = _token_key(token)
-        with self._polled_lock:
-            held = self._polled.get(key)
-        if held is not None and now < held[1]:
-            return replace(held[0])
         found = self.session(token)
         with self._polled_lock:
             if found is None:

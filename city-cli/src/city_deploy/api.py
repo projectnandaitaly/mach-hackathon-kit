@@ -180,7 +180,7 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
         deployment_id: str,
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        return service.get_deployment(_bearer(authorization), deployment_id)
+        return await service.get_deployment_async(_bearer(authorization), deployment_id)
 
     @app.post("/uploads/{deployment_id}")
     async def complete_upload(
