@@ -263,7 +263,7 @@ def create_app(deploy: DeployService | None = None) -> FastAPI:
         agent_id: str,
         authorization: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        return service.status(_bearer(authorization), agent_id)
+        return await service.status_async(_bearer(authorization), agent_id)
 
     @app.post("/agents/{agent_id:path}/scale")
     async def scale_agent(

@@ -1237,7 +1237,16 @@ class DeployService:
             "sessions": session_count,
         }
 
-    def status(self, token: str, agent_id: str) -> dict[str, Any]:
+    async def status_async(self, token: str, agent_id: str) -> dict[str, Any]:
+        """``status`` with the evidence read off the event loop. Teams poll it while waiting."""
+
+        self._session(token)
+        count = await asyncio.to_thread(self._message_count, agent_id)
+        return self.status(token, agent_id, message_count=count)
+
+    def status(
+        self, token: str, agent_id: str, *, message_count: int | None = None
+    ) -> dict[str, Any]:
         session = self._session(token)
         self._fresh_book(agent_id)
         record = self._existing(agent_id)
@@ -1255,7 +1264,8 @@ class DeployService:
         initialized = keyed or record is not None or has_deploy
         deployed = visibility == "visible" and version is not None
         rating_count = 0 if record is None else record.rating_count
-        message_count = self._message_count(agent_id)
+        if message_count is None:
+            message_count = self._message_count(agent_id)
         # A visible release always went through conformance, which exchanges
         # messages with city agents — do not depend on per-replica smoked state.
         messaged = (

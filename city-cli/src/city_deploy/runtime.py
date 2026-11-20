@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import ipaddress
 import json
 import logging
 import os
 import re
+import ssl
 import threading
 import time
 import urllib.request
@@ -663,16 +665,13 @@ class GkeRuntime:
                     },
                 )
             scaled.append(name)
-        if service == slug:
-            await asyncio.to_thread(self._close_candidate_door, namespace, slug)
         return scaled
 
     def _close_candidate_door(self, namespace: str, slug: str) -> None:
         """Delete the candidate Service, HTTPRoute and HealthCheckPolicy.
 
-        Each Service behind the agents Gateway holds one regional backend service, a quota
-        the whole cluster shares. The serving Service selects the candidate pods by label,
-        so the promoted release does not need the candidate door.
+        Only when the agent goes. The Gateway takes minutes to program a new route, so the
+        next update reuses this one; each kept door holds one regional backend service.
         """
 
         delete = getattr(self.client, "delete", None)
@@ -829,8 +828,6 @@ class GkeRuntime:
         delete = getattr(self.client, "delete", None)
         if callable(delete):
             delete(manifest)
-            if service.endswith("-candidate"):
-                self._close_candidate_door(namespace, service.removesuffix("-candidate"))
             return
         self.quiesce(agent_id)
 
@@ -962,6 +959,7 @@ class GkeRuntime:
                         "metadata": {"name": name, "namespace": namespace},
                     }
                 )
+        self._close_candidate_door(namespace, slug)
         with self.book_lock:
             self._placed.pop(agent_id, None)
             self._keep.pop(agent_id, None)
@@ -1657,9 +1655,19 @@ def _agent_tls_verify() -> bool | str:
     return path if path else False
 
 
+@functools.lru_cache(maxsize=4)
+def _agent_tls_context(path: str) -> ssl.SSLContext:
+    # Loading the CA on every route probe held the event loop: ten rollouts probe 40 times/s.
+    return ssl.create_default_context(cafile=path)
+
+
 async def _http_health(url: str) -> tuple[int, str | None]:
+    verify = _agent_tls_verify()
     try:
-        async with httpx.AsyncClient(timeout=3.0, verify=_agent_tls_verify()) as client:
+        async with httpx.AsyncClient(
+            timeout=3.0,
+            verify=_agent_tls_context(verify) if isinstance(verify, str) else verify,
+        ) as client:
             response = await client.get(url)
     except httpx.HTTPError:
         return 0, None
