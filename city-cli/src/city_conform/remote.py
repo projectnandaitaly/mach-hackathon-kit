@@ -207,6 +207,9 @@ class RemoteAgent:
         self._settle_wait = settle_wait
         self._business: set[str] = set()
         self._hidden = 0
+        # msg_ids this suite sent. The serving release of the same agent keeps trading
+        # during an update and its sent rows land under the same agent_id.
+        self._mine: set[str] = set()
         if signers is None:
             sender = ephemeral()
             prober = ephemeral()
@@ -311,6 +314,7 @@ class RemoteAgent:
 
     def unsigned_need(self) -> dict[str, Any]:
         msg_id = str(uuid.uuid4())
+        self._mine.add(msg_id)
         envelope = build(
             msg_id=msg_id,
             message_type="need.request",
@@ -350,6 +354,7 @@ class RemoteAgent:
     def order(self, *, epoch: int, kind: str, sender: Sender | None = None) -> dict[str, Any]:
         who = self._city if sender is None else sender
         msg_id = str(uuid.uuid4())
+        self._mine.add(msg_id)
         envelope = sign(
             build(
                 msg_id=msg_id,
@@ -382,11 +387,18 @@ class RemoteAgent:
             return 0
         evidence = self._evidence
         return (
-            len(evidence.sent())
+            sum(1 for row in evidence.sent() if self._caused(row))
             + len(evidence.holds())
             + len(evidence.escalations())
             + len(evidence.memory())
         )
+
+    def _caused(self, row: tuple[str, dict[str, object], str | None]) -> bool:
+        """A sent row this suite caused: to one of its senders, or naming one of its msg_ids."""
+
+        peer, body, _trace = row
+        suite = {self._sender[0], self._prober[0], self._city[0], self._stranger[0]}
+        return peer in suite or _mentions(body, self._mine)
 
     async def _exchange(self, method: str, path: str, payload: dict[str, Any] | None) -> HttpResult:
         response = await _call(self._client, method, path, json_body=payload)
@@ -435,6 +447,7 @@ class RemoteAgent:
         expires_at: datetime | None = None,
     ) -> dict[str, Any]:
         chosen = msg_id if msg_id is not None else str(uuid.uuid4())
+        self._mine.add(chosen)
         envelope = sign(
             build(
                 msg_id=chosen,
@@ -621,6 +634,16 @@ def _delivery_fence(payload: dict[str, Any]) -> int | None:
     if type(fence) is not int or fence < 1:
         return None
     return fence
+
+
+def _mentions(value: object, ids: set[str]) -> bool:
+    if isinstance(value, str):
+        return value in ids
+    if isinstance(value, Mapping):
+        return any(_mentions(item, ids) for item in value.values())
+    if isinstance(value, list | tuple):
+        return any(_mentions(item, ids) for item in value)
+    return False
 
 
 def _rows(value: object) -> list[object]:
