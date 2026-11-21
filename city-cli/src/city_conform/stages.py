@@ -39,7 +39,9 @@ _HEALTH_FIELDS = (
 )
 # Discarded before the 20 timed samples so a cold pod does not trip p99.
 HEALTH_WARMUP = 5
-_HEALTH_P99_S = 0.3
+# Round trip from Deploy, not the handler alone. A ready pod on a busy node
+# often answers in a few hundred milliseconds; one second still rejects a stall.
+_HEALTH_P99_S = 1.0
 _HEALTH_SAMPLES = 20
 _LATER = "owned by a later epic"
 
